@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title><%= page_title %></title>
 
-  <link rel="icon" href="/favicon.ico" sizes="16x16" type="image/x-icon">
+  <link rel="icon" href="/favicon.svg" sizes="16x16" type="image/x-icon">
   <%= render_meta_links @current_item if @current_item.respond_to?(:paginate) %>
   <%= tag.link rel: "canonical", href: canonical_url %>
   <%= tag.link rel: "search", type: "application/opensearchdescription+xml", href: opensearch_url(format: :xml, version: 2), title: "Search posts" %>
@@ -73,7 +73,7 @@
 
   <header id="top">
     <div id="app-name-header" class="font-bold font-header leading-normal inline-flex items-end gap-2">
-      <%= link_to image_pack_tag("static/logo.png"), root_path, id: "app-logo" %>
+      <%= link_to image_pack_tag("static/images/logo.png"), root_path, id: "app-logo" %>
       <%= link_to Danbooru.config.app_name, root_path, id: "app-name", class: "m-auto" %>
     </div>
 
@@ -179,7 +179,6 @@
   <footer id="page-footer" class="text-sm text-center flex-initial mt-4 py-3 w-full border-t flex flex-wrap items-center justify-center gap-1">
     <%= link_to "Terms", terms_of_service_path %>
     / <%= link_to "Privacy", privacy_policy_path %>
-    / <%= link_to "Upgrade", new_user_upgrade_path %>
     / <%= link_to "Contact", contact_path %>
     /
     <% if Danbooru.config.source_code_url.present? %>
