@@ -37,6 +37,7 @@ x-base-template: &base-template
     DANBOORU_REDIS_URL: redis://redis:6379
     DANBOORU_IQDB_URL: http://iqdb:5588
     DANBOORU_AUTOTAGGER_URl: http://autotagger:5000
+    DANBOORU_RECOMMENDER_URL: http://recommender:5000
     #DANBOORU_CANONICAL_URL: http://localhost:3000
     # # If you want to host danbooru under your own domain you need to replace the above line with the following (replace with your actual domain):
     DANBOORU_CANONICAL_URL: https://gallery.ostan-collections.net
@@ -88,6 +89,13 @@ services:
     image: ghcr.io/danbooru/autotagger
     ports:
       - "5000:5000"
+
+  recommender:
+    #image: ghcr.io/danbooru/recommender
+    build:
+      #context: https://github.com/danbooru/recommender.git
+      context: ../recommender
+      dockerfile: ./Dockerfile
 
   redis:
     image: redis
