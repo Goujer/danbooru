@@ -27,7 +27,7 @@ ARG NODE_VERSION="18.x"
 
 
 # The base layer for everything.
-FROM ubuntu:22.10 AS base
+FROM ubuntu:22.04 AS base
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-O", "globstar", "-O", "dotglob", "-c"]
 ENV DEBIAN_FRONTEND="noninteractive"
 RUN <<EOS
@@ -246,7 +246,7 @@ RUN <<EOS
   apt-get install -y --no-install-recommends \
     postgresql-client-${POSTGRESQL_CLIENT_VERSION} ca-certificates mkvtoolnix rclone openssl perl perl-modules libpq5 \
     libgmpxx4ldbl zlib1g libfftw3-3 libwebp7 libwebpmux3 libwebpdemux2 liborc-0.4.0 liblcms2-2 libpng16-16 libexpat1 \
-    libglib2.0 libgif7 libexif12 libheif1 libvpx7 libdav1d6 libseccomp-dev libjemalloc2 libarchive13 libyaml-0-2 libffi8 \
+    libglib2.0 libgif7 libexif12 libheif1 libvpx7 libdav1d5 libseccomp-dev libjemalloc2 libarchive13 libyaml-0-2 libffi8 \
     libreadline8 libarchive-zip-perl tini busybox less ncdu curl
 
   npm install -g yarn
