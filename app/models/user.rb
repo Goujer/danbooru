@@ -61,7 +61,7 @@ class User < ApplicationRecord
   # Personal preferences that are editable by the user, rather than internal flags. These will be cleared when the user deactivates their account.
   USER_PREFERENCE_BOOLEAN_ATTRIBUTES = ACTIVE_BOOLEAN_ATTRIBUTES - %w[is_banned requires_verification is_verified]
 
-  DEFAULT_BLACKLIST = ["gore", "guro", "scat", "rating:e"].join("\n")
+  DEFAULT_BLACKLIST = ["gore", "guro", "scat", "rating:e", "status:pending"].join("\n")
 
   attribute :id
   attribute :created_at
