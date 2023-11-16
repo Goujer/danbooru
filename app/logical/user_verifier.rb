@@ -28,11 +28,7 @@ class UserVerifier
 
   # @return [Integer] Returns whether the new account should be Restricted or a Member
   def initial_level
-    if requires_verification?
-      User::Levels::RESTRICTED
-    else
-      User::Levels::MEMBER
-    end
+    User::Levels::RESTRICTED
   end
 
   def log!

@@ -79,6 +79,8 @@ class UsersController < ApplicationController
 
     if params[:user][:email_address].present?
       @user.email_address = EmailAddress.new(address: params[:user][:email_address])
+    else
+      @user.errors.add(:base, "Email is required")
     end
 
     if Danbooru.config.enable_recaptcha? && !verify_recaptcha(model: @user)
