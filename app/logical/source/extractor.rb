@@ -68,7 +68,7 @@ module Source
       Source::Extractor::ArtStreet,
       Source::Extractor::Gumroad,
       Source::Extractor::Misskey,
-      Source::Extractor::Xfolio,
+      Source::Extractor::CiEn,
     ]
 
     # Should return true if the extractor is configured correctly. Return false
