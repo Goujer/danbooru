@@ -96,6 +96,8 @@ services:
       #context: https://github.com/danbooru/recommender.git
       context: ../recommender
       dockerfile: ./Dockerfile
+    depends_on:
+      - postgres
 
   redis:
     image: redis
