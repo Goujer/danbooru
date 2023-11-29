@@ -259,7 +259,8 @@ RUN <<EOS
   busybox --install -s
 EOS
 
-
+# Make Directory for emails
+RUN mkdir -p /usr/sbin/sendmail
 
 # Build Javascript and CSS assets. Output is in /danbooru/public/packs.
 FROM danbooru-base AS build-assets
