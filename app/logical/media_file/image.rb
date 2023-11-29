@@ -119,7 +119,7 @@ class MediaFile::Image < MediaFile
       # converting it to sRGB would change it from 1 channel to 3 channels.
       resized_image = thumbnail_image(max_width, height: max_height, size: :force, **options)
     else
-      raise NotImplementedError
+      raise NotImplementedError, "Can't Resize 1"
     end
 
     if resized_image.has_alpha?
@@ -140,7 +140,7 @@ class MediaFile::Image < MediaFile
       # https://www.libvips.org/API/current/VipsForeignSave.html#vips-heifsave
       resized_image.heifsave(output_file.path, Q: quality, compression: :av1, effort: 4, strip: true)
     else
-      raise NotImplementedError
+      raise NotImplementedError, "Can't Resize 2"
     end
 
     resized_image.release

@@ -37,7 +37,7 @@ class MediaAssetPreviewComponent < ApplicationComponent
     when 540, 720
       media_asset.variant("720x720")
     else
-      raise NotImplementedError
+      raise NotImplementedError, "Can't generate variant."
     end
   end
 end

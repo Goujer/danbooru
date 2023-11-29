@@ -295,7 +295,7 @@ class MediaAsset < ApplicationRecord
 
         # XXX should do this in parallel with thumbnail generation.
         # XXX shouldn't generate thumbnail twice (very slow for ugoira)
-        media_asset.update!(ai_tags: media_file.preview!(360, 360).ai_tags)
+        media_asset.update!(ai_tags: media_file.preview!(360, 360).ai_tags) unless media_file.is_flash?
         media_asset.update!(media_metadata: MediaMetadata.new(file: media_file))
 
         media_asset.distribute_files!(media_file)

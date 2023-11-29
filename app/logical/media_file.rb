@@ -233,7 +233,7 @@ class MediaFile
 
   # Like `preview`, but raises an exception if generating the preview fails for any reason.
   def preview!(width, height, **options)
-    raise NotImplementedError
+    raise NotImplementedError, "Preview Error"
   end
 
   # Return a set of AI-inferred tags for this image. Performs an API call to
