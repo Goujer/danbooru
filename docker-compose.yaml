@@ -78,8 +78,6 @@ services:
   # https://hub.docker.com/repository/docker/evazion/iqdb
   iqdb:
     image: evazion/iqdb
-    ports:
-      - "5588:5588"
     volumes:
       - "iqdb-data:/iqdb/data"
     command: ["http", "0.0.0.0", "5588", "/iqdb/data/iqdb.sqlite"]
