@@ -101,7 +101,7 @@ x-base-template: &base-template
 
     # You can set DANBOORU_CANONICAL_URL if you have a domain name for your site.
     DANBOORU_CANONICAL_URL: https://gallery.ostan-collections.net
-    # DANBOORU_HOSTNAME: danbooru.mydomain.com
+    DANBOORU_HOSTNAME: gallery.ostan-collections.net
     # DANBOORU_CANONICAL_URL: http://localhost:${DANBOORU_PORT:-3000}
 
     # You should set DANBOORU_SECRET_KEY_BASE to a random secret string. If you
@@ -115,12 +115,12 @@ x-base-template: &base-template
     DANBOORU_IQDB_URL: http://iqdb:5588
     DANBOORU_AUTOTAGGER_URl: http://autotagger:5000
     DANBOORU_RECOMMENDER_URL: http://recommender:5000
+    DANBOORU_IMAGE_STORAGE_PATH: /images
 
-    DANBOORU_HOSTNAME: gallery.ostan-collections.net
   volumes:
     - target: /tmp
       type: tmpfs
-    - danbooru-images:/danbooru/public/data
+    - danbooru-images:/images
     # If you want to do local development, you can uncomment this line to force the container to use your local changes
     # - "$PWD:/danbooru"
 
@@ -213,7 +213,7 @@ services:
       - source: nginx
         target: /usr/local/nginx/conf/nginx.conf
     volumes:
-      - "danbooru-images:/danbooru/public/data"
+      - "danbooru-images:/images"
 
 configs:
   danbooru_local_config:
