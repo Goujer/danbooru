@@ -170,12 +170,6 @@ services:
       - "iqdb-data:/iqdb/data"
     command: ["http", "0.0.0.0", "5588", "/iqdb/data/iqdb.sqlite"]
 
-  #docker run --rm -p 5000:5000
-  autotagger:
-    image: ghcr.io/danbooru/autotagger
-    ports:
-      - "5000:5000"
-
   recommender:
     #image: ghcr.io/danbooru/recommender
     build:
@@ -214,6 +208,9 @@ services:
         target: /usr/local/nginx/conf/nginx.conf
     volumes:
       - "danbooru-images:/images"
+
+  autotagger:
+    image: ghcr.io/danbooru/autotagger:latest
 
 configs:
   danbooru_local_config:
