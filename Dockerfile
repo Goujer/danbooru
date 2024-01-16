@@ -309,7 +309,7 @@ RUN <<EOS
   ln -s /tmp tmp
   ln -s packs public/packs-test
   userdel ubuntu
-  useradd --create-home --user-group danbooru
+  useradd --user-group danbooru --home-dir /tmp
   mkdir -p public/data /images
   chown danbooru:danbooru public/data /images
   ldconfig
