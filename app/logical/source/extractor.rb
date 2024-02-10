@@ -70,6 +70,7 @@ module Source
       Source::Extractor::Misskey,
       Source::Extractor::CiEn,
       Source::Extractor::Inkbunny,
+      Source::Extractor::Bluesky,
     ]
 
     # Should return true if the extractor is configured correctly. Return false
