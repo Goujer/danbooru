@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 class User < ApplicationRecord
-  self.ignored_columns = [:backup_codes]
-
   extend Memoist
 
   class PrivilegeError < StandardError; end
@@ -64,6 +62,12 @@ class User < ApplicationRecord
   USER_PREFERENCE_BOOLEAN_ATTRIBUTES = ACTIVE_BOOLEAN_ATTRIBUTES - %w[is_banned requires_verification is_verified]
 
   DEFAULT_BLACKLIST = ["gore", "guro", "scat", "shota", "loli", "status:pending"].join("\n")
+
+  # The number of backup codes to generate for a user.
+  MAX_BACKUP_CODES = 3
+
+  # The number of digits in each backup code.
+  BACKUP_CODE_LENGTH = 8
 
   # The number of backup codes to generate for a user.
   MAX_BACKUP_CODES = 3
