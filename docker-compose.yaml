@@ -122,8 +122,7 @@ x-base-template: &base-template
     DANBOORU_RECOMMENDER_URL: http://recommender:5000
     DANBOORU_IMAGE_STORAGE_PATH: /images
 
-    # This is true if we're running inside Github Codespaces.
-    CODESPACES: ${CODESPACES:-false}
+    DANBOORU_REVERSE_PROXY: ${DANBOORU_REVERSE_PROXY:-false}
 
   tmpfs:
     - /tmp
