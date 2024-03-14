@@ -10,10 +10,6 @@
 # https://schema.org/WebSite
 
 module SeoHelper
-  def site_description
-    "#{Danbooru.config.canonical_app_name} is the original anime image booru. Search millions of anime pictures categorized by thousands of tags."
-  end
-
   def json_ld_website_data
     urls = [
       Danbooru.config.twitter_url,
@@ -37,13 +33,13 @@ module SeoHelper
           "@id": root_url(anchor: "website", host: Danbooru.config.hostname),
           url: root_url(host: Danbooru.config.hostname),
           name: Danbooru.config.app_name,
-          description: site_description,
+          description: Danbooru.config.site_description,
           potentialAction: [{
             "@type": "SearchAction",
             target: "#{posts_url(host: Danbooru.config.hostname)}?tags={search_term_string}",
             "query-input": "required name=search_term_string",
           }]
-        }
+        }.compact
       ]
     })
   end
