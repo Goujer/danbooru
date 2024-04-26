@@ -9,8 +9,10 @@ module Source
       end
 
       def image_urls
-        if parsed_url.image_url?
+        if parsed_url.full_image_url.present?
           [parsed_url.full_image_url]
+        elsif parsed_url.image_url?
+          [parsed_url.to_s]
         else
           [
             *images_from_photo_post,
@@ -18,7 +20,7 @@ module Source
             *images_from_text_post,
             *images_from_answer_post,
           ].map do |url|
-            Source::URL.parse(url).full_image_url
+            Source::URL.parse(url).full_image_url || url
           end
         end
       end
