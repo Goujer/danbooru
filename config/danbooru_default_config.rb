@@ -197,7 +197,7 @@ module Danbooru
     #
     # Set this to 0 to disable multithreading. This may save memory at the cost of reduced performance.
     def max_concurrency
-      Etc.nprocessors
+      Concurrent.available_processor_count.to_i.clamp(1..)
     end
 
     # If true, allow web crawlers such as Google to crawl your site.
