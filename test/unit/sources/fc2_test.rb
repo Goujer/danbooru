@@ -280,6 +280,7 @@ module Sources
         assert(Source::URL.profile_url?("http://swordsouls.blog131.fc2blog.net"))
         assert(Source::URL.profile_url?("http://swordsouls.blog131.fc2blog.us"))
         assert(Source::URL.profile_url?("http://xkilikox.fc2web.com/image/haguruma.html"))
+        assert(Source::URL.profile_url?("http://oss4224.web.fc2.com/こ"))
 
         assert_equal("http://diary.fc2.com/cgi-sys/ed.cgi/kazuharoom", Source::URL.profile_url("http://diary.fc2.com/cgi-sys/ed.cgi/kazuharoom/?Y=2012&M=10&D=22"))
         assert_equal("http://toritokaizoku.web.fc2.com/tori.html", Source::URL.profile_url("http://toritokaizoku.web.fc2.com/tori.html"))
