@@ -9,8 +9,10 @@ module Source
       end
 
       def image_urls
-        if parsed_url.image_url?
+        if parsed_url.full_image_url.present?
           [parsed_url.full_image_url]
+        elsif parsed_url.candidate_full_image_urls.present?
+          [parsed_url.candidate_full_image_urls.find { |url| http_exists?(url) } || url.to_s]
         elsif api_response.present?
           file_list
         else
