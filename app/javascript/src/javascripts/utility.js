@@ -125,7 +125,7 @@ Utility.splitWords = function(string) {
   return words(string, /\S+/g);
 }
 
-Utility.copyToClipboard = async function(text, message = "Copied!") {
+export async function copyToClipboard(text, message = "Copied!") {
   try {
     await navigator.clipboard.writeText(text);
     Utility.notice(message);
@@ -168,6 +168,7 @@ $.fn.selectEnd = function() {
   })
 }
 
+Utility.copyToClipboard = copyToClipboard;
 Utility.printPage = printPage;
 
 export default Utility
