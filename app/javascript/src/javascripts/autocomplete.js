@@ -115,12 +115,13 @@ Autocomplete.initialize_tag_autocomplete = function() {
         let caret = target.selectionStart;
         var before_caret_text = target.value.substring(0, caret);
         var after_caret_text = target.value.substring(caret);
+        let orig_after_caret_text = after_caret_text;
         if (event.inputType == "deleteWordBackward") {
           before_caret_text = before_caret_text.replace(/\S+[ \t]*$/, "");
         } else if (event.inputType == "deleteWordForward") {
           after_caret_text = after_caret_text.replace(/^[ \t]*\S+/, "");
         }
-        if (after_caret_text.match(/^\S/)) {
+        if (after_caret_text.match(/^\S/) && orig_after_caret_text.match(/^\S/)) {
           // There's a tag after the caret, so add a space between them so it doesn't interfere with autocomplete.
           after_caret_text = " " + after_caret_text;
         }
