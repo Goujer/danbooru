@@ -60,6 +60,8 @@ class UserEvent < ApplicationRecord
     backup_code_reauthenticate: 845,      # The user successfully entered their password and backup code on the confirm password page.
   }
 
+  normalizes :user_agent, with: ->(user_agent) { user_agent.to_s.truncate(800, separator: " ", omission: " ...") }
+
   delegate :country, :city, :is_proxy?, to: :ip_geolocation, allow_nil: true
 
   scope :authorized, -> { where(category: AUTHORIZED_EVENTS) }
