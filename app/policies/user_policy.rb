@@ -86,4 +86,5 @@ class UserPolicy < ApplicationPolicy
 
   alias_method :profile?, :show?
   alias_method :settings?, :edit?
+  alias_method :demote?, :promote?
 end
