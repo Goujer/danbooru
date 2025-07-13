@@ -53,9 +53,8 @@ class Ban < ApplicationRecord
   end
 
   def self.prune!
-    expired.includes(:user).find_each do |ban|
-      ban.user.unban! if ban.user.ban_expired?
-    end
+    users = User.banned.where.not(id: Ban.active.select(:user_id))
+    users.find_each(&:unban!)
   end
 
   def validate_user_is_bannable
