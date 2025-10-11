@@ -3,11 +3,7 @@
 class Source::Extractor
   class Fantia < Source::Extractor
     def self.enabled?
-      Danbooru.config.fantia_session_id.present?
-    end
-
-    def match?
-      Source::URL::Fantia === parsed_url
+      SiteCredential.for_site("Fantia").present?
     end
 
     def image_urls
@@ -16,10 +12,8 @@ class Source::Extractor
       elsif parsed_url.candidate_full_image_urls.present?
         url = parsed_url.candidate_full_image_urls.find { |url| http_exists?(url) } || parsed_url.to_s
         [url]
-      elsif parsed_url.downloadable?
-        resp = http.head(parsed_url)
-        url = resp.uri.to_s if resp.status == 200 && resp.mime_type != "text/html"
-        [url].compact
+      elsif parsed_url.download_url.present?
+        [http.cache(1.minute).redirect_url(parsed_url.download_url).to_s].compact_blank
       elsif parsed_url.image_url?
         [parsed_url.to_s]
       elsif work_type == "post"
@@ -41,9 +35,9 @@ class Source::Extractor
         when "photo_gallery"
           content["post_content_photos"].to_a.map { |i| i.dig("url", "original") }
         when "file"
-          "https://www.fantia.jp/#{content["download_uri"]}"
+          [URI.join("https://fantia.jp", content["download_uri"]).to_s]
         when "blog"
-          comment = JSON.parse(content["comment"]) rescue {}
+          comment = content["comment"]&.parse_json || {}
 
           comment["ops"].to_a.pluck("insert").grep(Hash).filter_map do |node|
             if node.dig("fantiaImage", "original_url").present?
@@ -67,10 +61,6 @@ class Source::Extractor
       end.compact
     end
 
-    def page_url
-      parsed_url.page_url || parsed_referer&.page_url
-    end
-
     def tags
       case work_type
       when "post"
@@ -87,7 +77,7 @@ class Source::Extractor
       end
     end
 
-    def artist_name
+    def display_name
       case work_type
       when "post"
         api_response&.dig("post", "fanclub", "creator_name")
@@ -122,12 +112,17 @@ class Source::Extractor
       when "post"
         api_response&.dig("post", "comment")
       when "product"
-        page&.at(".product-description")&.text
+        page&.at(".product-description > div")&.inner_html
       end
     end
 
     def dtext_artist_commentary_desc
-      DText.from_html(artist_commentary_desc)
+      case work_type
+      when "post"
+        DText.from_plaintext(artist_commentary_desc)
+      when "product"
+        DText.from_html(artist_commentary_desc, base_url: "https://fantia.jp")
+      end
     end
 
     def work_type
@@ -141,9 +136,9 @@ class Source::Extractor
     memoize def page
       case work_type
       when "post"
-        http.cache(1.minute).parsed_get("https://fantia.jp/posts/#{work_id}")
+        parsed_get("https://fantia.jp/posts/#{work_id}")
       when "product"
-        http.cache(1.minute).parsed_get("https://fantia.jp/products/#{work_id}")
+        parsed_get("https://fantia.jp/products/#{work_id}")
       end
     end
 
@@ -156,12 +151,12 @@ class Source::Extractor
 
       http.cache(1.minute).headers(
         "X-CSRF-Token": csrf_token,
-        "X-Requested-With": "XMLHttpRequest",
+        "X-Requested-With": "XMLHttpRequest"
       ).parsed_get("https://fantia.jp/api/v1/posts/#{work_id}") || {}
     end
 
     def http
-      super.cookies(_session_id: Danbooru.config.fantia_session_id)
+      super.cookies(_session_id: credentials[:session_id])
     end
   end
 end

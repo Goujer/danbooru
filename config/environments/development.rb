@@ -1,4 +1,6 @@
 require "active_support/core_ext/integer/time"
+require_relative "../../app/logical/danbooru/url"
+require_relative "../../app/logical/current_user"
 
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
@@ -79,5 +81,5 @@ Rails.application.configure do
 
   # https://bigbinary.com/blog/rails-6-adds-guard-against-dns-rebinding-attacks
   # hxxps://github.com/rails/rails/pull/33145
-  config.hosts += [".ngrok.io", ".ngrok.app", ".ngrok.dev", ".ngrok-free.app", ".ngrok-free.dev", ".app.github.dev", ".nip.io", ".localhost", ".local", Danbooru.config.hostname]
+  config.hosts += [".ngrok.io", ".ngrok.app", ".ngrok.dev", ".ngrok-free.app", ".ngrok-free.dev", ".app.github.dev", ".nip.io", ".localhost", ".local", Danbooru::URL.parse!(Danbooru.config.canonical_url).host]
 end

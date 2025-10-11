@@ -3,11 +3,7 @@
 # @see Source::URL::CiEn
 class Source::Extractor::CiEn < Source::Extractor
   def self.enabled?
-    Danbooru.config.ci_en_session_cookie.present?
-  end
-
-  def match?
-    Source::URL::CiEn === parsed_url
+    SiteCredential.for_site("Ci-En").present?
   end
 
   def image_urls
@@ -21,7 +17,7 @@ class Source::Extractor::CiEn < Source::Extractor
         urls << og_url.to_s
       end
 
-      urls += page&.css(".l-creatorPage-main article vue-l-image, .l-creatorPage-main article vue-file-player").map do |node|
+      urls += page&.css(".l-creatorPage-main article vue-l-image, .l-creatorPage-main article vue-file-player").to_a.map do |node|
         case node.name
         when "vue-l-image"
           node["data-raw"]
@@ -36,19 +32,11 @@ class Source::Extractor::CiEn < Source::Extractor
     end
   end
 
-  def page_url
-    parsed_url.page_url || parsed_referer&.page_url
-  end
-
-  def tag_name
-    "cien_#{artist_id}" if artist_id.present?
-  end
-
   def artist_id
     parsed_url.creator_id || parsed_referer&.creator_id
   end
 
-  def artist_name
+  def display_name
     page&.css(".c-accountInfo .e-userName")&.text&.strip
   end
 
@@ -71,7 +59,7 @@ class Source::Extractor::CiEn < Source::Extractor
   end
 
   def dtext_artist_commentary_desc
-    DText.from_html(artist_commentary_desc)&.strip&.gsub("\n\n", "\n")
+    DText.from_html(artist_commentary_desc, base_url: "https://ci-en.net")
   end
 
   def tags
@@ -81,14 +69,14 @@ class Source::Extractor::CiEn < Source::Extractor
   end
 
   memoize def page
-    http.cache(1.minute).parsed_get(page_url)
+    parsed_get(page_url)
   end
 
   def http
     # Same cookie works for both all-ages and R18 sites
     super.cookies(
-      ci_en_session: Danbooru.config.ci_en_session_cookie,
-      accepted_rating: "r18g",
+      ci_en_session: credentials[:session_cookie],
+      accepted_rating: "r18g"
     )
   end
 end

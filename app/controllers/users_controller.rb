@@ -4,12 +4,10 @@ class UsersController < ApplicationController
   respond_to :html, :xml, :json
 
   around_action :set_timeout, only: [:profile, :show]
-
-  rate_limit :create, rate: 1.0/5.minutes, burst: 5
+  verify_captcha only: :create
 
   def new
     @user = authorize User.new
-    @user.email_address = EmailAddress.new
     respond_with(@user)
   end
 
@@ -65,32 +63,10 @@ class UsersController < ApplicationController
   end
 
   def create
-    user_verifier = UserVerifier.new(CurrentUser.user, request)
+    user_signup = UserSignup.new(request)
+    @user = authorize(user_signup.user)
 
-    @user = authorize User.new(
-      last_ip_addr: request.remote_ip,
-      last_logged_in_at: Time.zone.now,
-      requires_verification: user_verifier.requires_verification?,
-      level: user_verifier.initial_level,
-      name: params[:user][:name],
-      password: params[:user][:password],
-      password_confirmation: params[:user][:password_confirmation]
-    )
-
-    user_verifier.log! if user_verifier.requires_verification?
-    UserEvent.build_from_request(@user, :user_creation, request)
-
-    if params[:user][:email_address].present?
-      @user.email_address = EmailAddress.new(address: params[:user][:email_address])
-    end
-
-    if !CaptchaService.new.verify_request(request)
-      @user.errors.add(:base, "Invalid captcha, try again.")
-    elsif @user.email_address&.valid? && @user.email_address&.invalid?(:deliverable)
-      @user.errors.add(:email_address, "is invalid or can't receive mail")
-    elsif @user.save
-      session[:user_id] = @user.id
-      UserMailer.with_request(request).welcome_user(@user).deliver_later
+    if @user.save(context: [:create, :deliverable])
       set_current_user
     end
 
@@ -101,13 +77,7 @@ class UsersController < ApplicationController
     @user = authorize User.find(params[:id])
     @user.update(permitted_attributes(@user))
 
-    if @user.errors.any?
-      flash[:notice] = @user.errors.full_messages.join("; ")
-    else
-      flash[:notice] = "Settings updated"
-    end
-
-    respond_with(@user) do |format|
+    respond_with(@user, notice: "Settings updated") do |format|
       format.html { redirect_back fallback_location: edit_user_path(@user) }
     end
   end
@@ -139,8 +109,7 @@ class UsersController < ApplicationController
     user_deletion.delete!
 
     if user_deletion.errors.none?
-      flash[:notice] = "Your account has been deactivated"
-      respond_with(user_deletion, location: posts_path)
+      respond_with(user_deletion, notice: "Account deactivated", location: posts_path)
     else
       flash[:notice] = user_deletion.errors.full_messages.join("; ")
       redirect_to deactivate_user_path(@user)
@@ -148,7 +117,8 @@ class UsersController < ApplicationController
   end
 
   def custom_style
-    @custom_css = CurrentUser.user.custom_css
+    @user = authorize CurrentUser.user
+    @custom_css = @user.custom_css
     expires_in 10.years
   end
 

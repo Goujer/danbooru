@@ -37,9 +37,11 @@ module Source
         @illust_id = $1
         @image_id = $1
 
-      # https://seiga.nicovideo.jp/watch/mg316708
-      # https://sp.seiga.nicovideo.jp/watch/mg316708
-      in /seiga$/, "nicovideo.jp", "watch", /^mg(\d+)/ => manga_id
+      # https://seiga.nicovideo.jp/watch/mg925907
+      # https://manga.nicovideo.jp/watch/mg925907
+      # https://sp.seiga.nicovideo.jp/watch/mg925907
+      # https://sp.manga.nicovideo.jp/watch/mg925907
+      in /(?:seiga|manga)$/, "nicovideo.jp", "watch", /^mg(\d+)/ => manga_id
         @manga_id = $1
 
       # See https://wiki.archiveteam.org/index.php/Niconico#Overview_of_Video_IDs
@@ -101,7 +103,7 @@ module Source
 
       # https://deliver.cdn.nicomanga.jp/thumb/aHR0cHM6Ly9kZWxpdmVyLmNkbi5uaWNvbWFuZ2EuanAvdGh1bWIvODEwMDk2OHA_MTU2NTY5OTg4MA.webp (page: https://seiga.nicovideo.jp/watch/mg316708, full image: https://lohas.nicoseiga.jp/priv/1f6d38ef2ba6fc9d9e27823babc4cf721cef16ec/1646906617/8100969)
       in "deliver.cdn", "nicomanga.jp", *rest
-        # unhandled
+        nil
 
       # https://drm.cdn.nicomanga.jp/image/d4a2faa68ec34f95497db6601a4323fde2ccd451_9537/8017978p?1570012695
       in "drm.cdn", "nicomanga.jp", "image", _, /^(\d+)p$/ => image_id
@@ -192,14 +194,14 @@ module Source
       if illust_id.present?
         "https://seiga.nicovideo.jp/seiga/im#{illust_id}"
       elsif manga_id.present?
-        "https://seiga.nicovideo.jp/watch/mg#{manga_id}"
+        "https://manga.nicovideo.jp/watch/mg#{manga_id}"
       elsif video_id.present?
         "https://www.nicovideo.jp/watch/#{video_id}"
       elsif oekaki_id.present?
         "https://dic.nicovideo.jp/oekaki_id/#{oekaki_id}"
+      end
       # elsif image_id.present?
       #   "https://seiga.nicovideo.jp/image/source/#{image_id}"
-      end
     end
   end
 end

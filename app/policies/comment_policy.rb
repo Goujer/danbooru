@@ -33,6 +33,16 @@ class CommentPolicy < ApplicationPolicy
     !record.is_deleted?
   end
 
+  def rate_limit_for_create(**_options)
+    if record.invalid?
+      { action: "comments:create:invalid", rate: 1.0 / 1.second, burst: 1 }
+    elsif user.comments.exists?(created_at: ..24.hours.ago)
+      { rate: 1.0 / 1.minute, burst: 3 }
+    else
+      { rate: 1.0 / 2.minutes, burst: 2 }
+    end
+  end
+
   def permitted_attributes_for_create
     [:body, :post_id, :do_not_bump_post, (:is_sticky if can_sticky_comment?)].compact
   end

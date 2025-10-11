@@ -24,7 +24,7 @@ module Danbooru
     class FileTooLargeError < Error; end
 
     Danbooru::Http::HtmlAdapter.register
-    Danbooru::Http::JsonAdapter.register
+    Danbooru::Http::JSONAdapter.register
     Danbooru::Http::XmlAdapter.register
     Danbooru::Http::Cache.register
     Danbooru::Http::Logger.register
@@ -76,8 +76,13 @@ module Danbooru
     # and "bad URI(is not URI?)" errors.
     def self.normalize_uri(uri)
       parsed_uri = Addressable::URI.parse(uri)
-      normalized_path = Addressable::URI.unencode_component(parsed_uri.path)
-      normalized_path = Addressable::URI.encode_component(normalized_path, Addressable::URI::CharacterClasses::PATH)
+
+      normalized_path = parsed_uri.path.split(%r{(/)}).map do |segment|
+        next segment if segment == "/"
+        segment = Addressable::URI.unencode_component(segment)
+        segment = Addressable::URI.encode_component(segment, Addressable::URI::CharacterClasses::PATH.gsub(%r{\\/}, ""))
+        segment
+      end.join
 
       HTTP::URI.new(
         scheme: parsed_uri.scheme,
@@ -90,6 +95,10 @@ module Danbooru
 
     def initialize
       @http ||= Danbooru::Http.default
+    end
+
+    def initialize_dup(old)
+      @http = old.http.dup
     end
 
     def get(url, **options)
@@ -128,8 +137,12 @@ module Danbooru
       parsed_request(:post, url, **options)
     end
 
-    def follow(*args)
-      dup.tap { |o| o.http = o.http.follow(*args) }
+    def follow(max_redirects: MAX_REDIRECTS)
+      use(redirector: { max_redirects: })
+    end
+
+    def no_follow
+      disable_feature(:redirector)
     end
 
     def max_size(size)
@@ -160,8 +173,21 @@ module Danbooru
       dup.tap { |o| o.http = o.http.use(*args) }
     end
 
-    def cache(expires_in)
-      use(cache: { expires_in: expires_in })
+    def disable_feature(*features)
+      dup.tap do |o|
+        options = o.http.default_options.dup
+        options.features = options.features.without(*features)
+        o.http = o.http.branch(options)
+      end
+    end
+
+    # @param expires_in [Integer] The number of seconds to cache the response for.
+    # @param key [String, Proc] The cache key to use. If a Proc, it will be called with the request as an argument.
+    # @param if [Proc] A condition to check before caching the response. If it returns false, the response won't be
+    #   cached. By default, everything but 5xx responses is cached.
+    # @return [Danbooru::Http] A new HTTP client with caching enabled.
+    def cache(expires_in, key: nil, if: nil)
+      use(cache: { expires_in: expires_in, key: key, if: binding.local_variable_get(:if) })
     end
 
     def proxy(url: Danbooru.config.http_proxy)
@@ -194,12 +220,14 @@ module Danbooru
       end
     end
 
-    # @return [Danbooru::URL, nil] Return the URL that the given URL redirects to, or nil on error.
-    def redirect_url(url)
-      response = head(url)
-      return nil unless response.status.in?(200..299)
-
-      Danbooru::URL.parse(response.uri)
+    # Return the URL that the given URL redirects to, or nil on error. This does not follow multiple redirects.
+    #
+    # @param method [String] The HTTP method to use, GET or HEAD. HEAD may be faster, but may fail for some sites.
+    # @return [Danbooru::URL, nil] The URL this URL redirects to, or nil on error.
+    def redirect_url(url, method: "HEAD")
+      response = no_follow.request(method.downcase, url)
+      return nil unless response.status.redirect?
+      Danbooru::URL.parse(response.headers["Location"])
     end
 
     concerning :DownloadMethods do

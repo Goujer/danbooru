@@ -47,8 +47,7 @@ class FFmpeg
   # @return [Hash] A hash of the file's metadata. Will be empty if reading the file failed for any reason.
   def metadata
     output = shell!("ffprobe -v quiet -print_format json -show_format -show_streams -show_packets #{file.path.shellescape}")
-    json = JSON.parse(output)
-    json.with_indifferent_access
+    output.parse_json || {}
   rescue Error => e
     { error: e.message.strip }.with_indifferent_access
   end
@@ -97,6 +96,9 @@ class FFmpeg
     metadata.dig(:format, :tags, :major_brand)
   end
 
+  # @return [String, nil] The pixel format of the video stream, or nil if unknown. Common values include yuv420p,
+  #   yuv422p, yuv444p, rgb24, bgr24, gray, etc.
+  # @see https://github.com/FFmpeg/FFmpeg/blob/master/libavutil/pixfmt.h
   def pix_fmt
     video_stream[:pix_fmt]
   end

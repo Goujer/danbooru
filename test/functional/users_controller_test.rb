@@ -200,9 +200,12 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
         assert_redirected_to posts_path
         assert_equal(true, @user.reload.is_deleted?)
-        assert_equal("Your account has been deactivated", flash[:notice])
+        assert_equal("Account deactivated", flash[:notice])
         assert_nil(session[:user_id])
-        assert_equal(true, @user.user_events.user_deletion.exists?)
+        assert_nil(session[:login_id])
+        assert_nil(session[:last_authenticated_at])
+        assert_equal(true, @user.user_events.user_deletion.exists?(login_session_id: @user.login_sessions.last.login_id))
+        assert_equal(false, @user.mod_actions.user_delete.exists?)
       end
 
       should "not delete the user when given an incorrect password" do
@@ -212,6 +215,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
         assert_equal(false, @user.reload.is_deleted?)
         assert_equal("Password is incorrect", flash[:notice])
         assert_equal(@user.id, session[:user_id])
+        assert_equal(@user.login_sessions.last.login_id, session[:login_id])
         assert_equal(false, @user.user_events.user_deletion.exists?)
       end
 
@@ -220,8 +224,12 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
         assert_redirected_to posts_path
         assert_equal(true, @user.reload.is_deleted?)
-        assert_equal("Your account has been deactivated", flash[:notice])
-        assert_equal(true, @user.user_events.user_deletion.exists?)
+        assert_equal("Account deactivated", flash[:notice])
+        assert_not_nil(session[:user_id])
+        assert_not_nil(session[:login_id])
+        assert_not_nil(session[:last_authenticated_at])
+        assert_equal(false, @user.user_events.user_deletion.exists?)
+        assert_equal(true, @user.mod_actions.user_delete.exists?)
       end
 
       should "not allow users to delete other users" do
@@ -268,7 +276,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       end
 
       should "not show secret attributes to the user themselves" do
-        @user.update!(totp_secret: TOTP.generate_secret, backup_codes: [1, 2, 3])
+        @user = create(:user, :with_2fa)
         get_auth user_path(@user), @user, as: :json
 
         assert_response :success
@@ -398,8 +406,17 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
         assert_response :success
       end
 
-      should "render for a logged in user" do
+      should "fail for a logged in user" do
         get_auth new_user_path, @user
+        assert_response 403
+      end
+
+      should "render when captchas are enabled" do
+        Danbooru.config.unstub(:captcha_site_key)
+        Danbooru.config.unstub(:captcha_secret_key)
+        skip unless CaptchaService.new.enabled?
+
+        get new_user_path
         assert_response :success
       end
 
@@ -415,6 +432,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
 
     context "create action" do
       should "create a user" do
+        freeze_time
         post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1" }}
 
         assert_redirected_to User.last
@@ -422,42 +440,154 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
         assert_equal(User::Levels::MEMBER, User.last.level)
         assert_equal(User.last, User.last.authenticate_password("xxxxx1"))
         assert_nil(User.last.email_address)
-        assert_equal(true, User.last.user_events.user_creation.exists?)
+        assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
+        assert_no_enqueued_jobs
 
-        perform_enqueued_jobs
-        assert_performed_jobs(1, only: MailDeliveryJob)
-        # assert_enqueued_email_with UserMailer.with_request(request), :welcome_user, args: [User.last], queue: "default"
+        assert_equal(User.last.id, session[:user_id])
+        assert_equal(Time.now.utc.inspect, session[:last_authenticated_at])
+        assert_equal(User.last.login_sessions.last.login_id, session[:login_id])
+        assert_equal(Time.now.utc.inspect, User.last.last_logged_in_at.utc.inspect)
+        assert_equal("127.0.0.1", User.last.last_ip_addr.to_s)
       end
 
       should "create a user with a valid email" do
-        post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1", email_address: "webmaster@danbooru.donmai.us" }}
+        freeze_time
+        post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1", email_address: { address: "webmaster@danbooru.donmai.us" }}}
 
         assert_redirected_to User.last
         assert_equal("xxx", User.last.name)
         assert_equal(User.last, User.last.authenticate_password("xxxxx1"))
         assert_equal("webmaster@danbooru.donmai.us", User.last.email_address.address)
-        assert_equal(true, User.last.user_events.user_creation.exists?)
+        assert_equal(false, User.last.email_address.is_verified?)
+        assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
+        assert_equal(false, User.last.user_events.email_change.exists?)
+        assert_equal(false, ModAction.email_address_update.exists?)
 
+        assert_enqueued_with(job: MailDeliveryJob, args: ->(args) { args[0..1] == %w[UserMailer welcome_user] })
         perform_enqueued_jobs
         assert_performed_jobs(1, only: MailDeliveryJob)
-        # assert_enqueued_email_with UserMailer.with_request(request), :welcome_user, args: [User.last], queue: "default"
+
+        assert_equal(User.last.id, session[:user_id])
+        assert_equal(Time.now.utc.inspect, session[:last_authenticated_at])
+        assert_equal(User.last.login_sessions.last.login_id, session[:login_id])
+        assert_equal(Time.now.utc.inspect, User.last.last_logged_in_at.utc.inspect)
+        assert_equal("127.0.0.1", User.last.last_ip_addr.to_s)
+      end
+
+      should "not create a user with an invalid name" do
+        assert_no_difference("User.count") do
+          post users_path, params: { user: { name: "x" * 100, password: "xxxxx1", password_confirmation: "xxxxx1" }}
+
+          assert_response :success
+          assert_nil(session[:user_id])
+          assert_nil(session[:login_id])
+          assert_nil(session[:last_authenticated_at])
+          assert_no_enqueued_jobs
+        end
+      end
+
+      should "not create a user with an invalid password" do
+        assert_no_difference("User.count") do
+          post users_path, params: { user: { name: "xxx", password: "x", password_confirmation: "x" }}
+
+          assert_response :success
+          assert_nil(session[:user_id])
+          assert_nil(session[:login_id])
+          assert_nil(session[:last_authenticated_at])
+          assert_no_enqueued_jobs
+        end
+      end
+
+      should "not create a user with a mismatched password" do
+        assert_no_difference("User.count") do
+          post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx2" }}
+
+          assert_response :success
+          assert_nil(session[:user_id])
+          assert_nil(session[:login_id])
+          assert_nil(session[:last_authenticated_at])
+          assert_no_enqueued_jobs
+        end
       end
 
       should "not create a user with an invalid email" do
         assert_no_difference(["User.count", "EmailAddress.count"]) do
-          post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1", email_address: "test" }}
+          post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1", email_address: { address: "test" }}}
 
           assert_response :success
-          assert_no_enqueued_emails
+          assert_nil(session[:user_id])
+          assert_nil(session[:login_id])
+          assert_nil(session[:last_authenticated_at])
+          assert_no_enqueued_jobs
         end
       end
 
       should "not create a user with an undeliverable email address" do
         assert_no_difference(["User.count", "EmailAddress.count"]) do
-          post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1", email_address: "nobody@nothing.donmai.us" } }
+          post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1", email_address: { address: "nobody@nothing.donmai.us" } } }
 
           assert_response :success
-          assert_no_enqueued_emails
+          assert_nil(session[:user_id])
+          assert_nil(session[:login_id])
+          assert_nil(session[:last_authenticated_at])
+          assert_no_enqueued_jobs
+        end
+      end
+
+      should "not allow logged-in users to create new accounts" do
+        assert_no_difference("User.count") do
+          post_auth users_path, @user, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1" }}
+
+          assert_response 403
+        end
+      end
+
+      context "with a dummy captcha key" do
+        should "not create a user if the captcha response is invalid" do
+          # https://developers.cloudflare.com/turnstile/reference/testing/#dummy-sitekeys-and-secret-keys
+          Danbooru.config.stubs(:captcha_site_key).returns("3x00000000000000000000FF") # forces an interactive challenge
+          Danbooru.config.stubs(:captcha_secret_key).returns("2x0000000000000000000000000000000AA") # always fails
+
+          assert_no_difference(["User.count"]) do
+            post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1" }, "cf-turnstile-response": "blah" }
+
+            assert_response 401
+          end
+        end
+
+        should "create a user if the captcha response is valid" do
+          Danbooru.config.stubs(:captcha_site_key).returns("3x00000000000000000000FF") # forces an interactive challenge
+          Danbooru.config.stubs(:captcha_secret_key).returns("1x0000000000000000000000000000000AA") # always passes
+
+          post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1" }, "cf-turnstile-response": "blah" }
+
+          assert_redirected_to User.last
+          assert_equal("xxx", User.last.name)
+          assert_equal(User.last.id, session[:user_id])
+          assert_equal(User.last.login_sessions.last.login_id, session[:login_id])
+        end
+      end
+
+      context "with a live captcha key" do
+        setup do
+          Danbooru.config.unstub(:captcha_site_key, :captcha_secret_key)
+          skip unless CaptchaService.new.enabled?
+        end
+
+        should "not create a user if the captcha response is missing" do
+          assert_no_difference(["User.count"]) do
+            post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1" } }
+
+            assert_response 401
+          end
+        end
+
+        should "not create a user if the captcha response is invalid" do
+          assert_no_difference(["User.count"]) do
+            post users_path, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1" }, "cf-turnstile-response": "blah" }
+
+            assert_response 401
+          end
         end
       end
 
@@ -524,19 +654,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
           assert_equal(true, User.last.is_member?)
           assert_equal(false, User.last.is_restricted?)
           assert_equal(false, User.last.requires_verification)
-          assert_equal(true, User.last.user_events.user_creation.exists?)
-        end
-
-        should "mark accounts created by already logged in users as restricted" do
-          self.remote_addr = @valid_ip
-
-          post_auth users_path, @user, params: { user: { name: "xxx", password: "xxxxx1", password_confirmation: "xxxxx1" }}
-
-          assert_redirected_to User.last
-          assert_equal(false, User.last.is_member?)
-          assert_equal(true, User.last.is_restricted?)
-          assert_equal(true, User.last.requires_verification)
-          assert_equal(true, User.last.user_events.user_creation.exists?)
+          assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
         end
 
         should "mark users signing up from proxies as restricted" do
@@ -549,7 +667,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
           assert_equal(false, User.last.is_member?)
           assert_equal(true, User.last.is_restricted?)
           assert_equal(true, User.last.requires_verification)
-          assert_equal(true, User.last.user_events.user_creation.exists?)
+          assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
         end
 
         should "mark users signing up from a partial banned IP as restricted" do
@@ -564,7 +682,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
           assert_equal(true, User.last.requires_verification)
           assert_equal(1, @ip_ban.reload.hit_count)
           assert(@ip_ban.last_hit_at > 1.minute.ago)
-          assert_equal(true, User.last.user_events.user_creation.exists?)
+          assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
         end
 
         should "not mark users signing up from non-proxies as restricted" do
@@ -577,12 +695,40 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
           assert_equal(true, User.last.is_member?)
           assert_equal(false, User.last.is_restricted?)
           assert_equal(false, User.last.requires_verification)
-          assert_equal(true, User.last.user_events.user_creation.exists?)
+          assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
         end
 
-        should "mark accounts registered from an IPv4 address recently used for another account as restricted" do
-          @user.update!(last_ip_addr: @valid_ip)
+        should "mark accounts registered from an IPv4 address recently used by another login as restricted" do
           self.remote_addr = @valid_ip
+
+          create(:user_event, created_at: 1.hour.ago, category: :login, ip_addr: @valid_ip)
+          post users_path, params: { user: { name: "dupe", password: "xxxxx1", password_confirmation: "xxxxx1" }}
+
+          assert_redirected_to User.last
+          assert_equal(false, User.last.is_member?)
+          assert_equal(true, User.last.is_restricted?)
+          assert_equal(true, User.last.requires_verification)
+          assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
+        end
+
+        should "mark accounts registered from an IPv4 address recently used by another account as restricted" do
+          self.remote_addr = @valid_ip
+
+          create(:user, last_logged_in_at: 1.hour.ago, last_ip_addr: @valid_ip)
+          post users_path, params: { user: { name: "dupe", password: "xxxxx1", password_confirmation: "xxxxx1" }}
+
+          assert_redirected_to User.last
+          assert_equal(false, User.last.is_member?)
+          assert_equal(true, User.last.is_restricted?)
+          assert_equal(true, User.last.requires_verification)
+          assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
+        end
+
+        should "mark accounts registered using a session ID previously used by another account as restricted" do
+          self.remote_addr = @valid_ip
+
+          get new_user_path # create a session
+          create(:user_event, category: :login, session_id: session[:session_id])
 
           post users_path, params: { user: { name: "dupe", password: "xxxxx1", password_confirmation: "xxxxx1" }}
 
@@ -590,7 +736,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
           assert_equal(false, User.last.is_member?)
           assert_equal(true, User.last.is_restricted?)
           assert_equal(true, User.last.requires_verification)
-          assert_equal(true, User.last.user_events.user_creation.exists?)
+          assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
         end
 
         should "not mark users signing up from localhost as restricted" do
@@ -602,7 +748,7 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
           assert_equal(true, User.last.is_member?)
           assert_equal(false, User.last.is_restricted?)
           assert_equal(false, User.last.requires_verification)
-          assert_equal(true, User.last.user_events.user_creation.exists?)
+          assert_equal(true, User.last.user_events.user_creation.exists?(login_session_id: User.last.login_sessions.last.login_id))
         end
       end
     end
@@ -611,6 +757,16 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
       should "render" do
         get_auth edit_user_path(@user), @user
         assert_response :success
+      end
+
+      should "allow the owner to view another user's settings" do
+        get_auth edit_user_path(@user), create(:owner_user)
+        assert_response :success
+      end
+
+      should "not allow a user to view another user's settings" do
+        get_auth edit_user_path(@user), create(:admin_user)
+        assert_response 403
       end
     end
 
@@ -631,8 +787,16 @@ class UsersControllerTest < ActionDispatch::IntegrationTest
     context "update action" do
       should "update a user" do
         put_auth user_path(@user), @user, params: {:user => {:favorite_tags => "xyz"}}
-        @user.reload
-        assert_equal("xyz", @user.favorite_tags)
+
+        assert_redirected_to edit_user_path(@user)
+        assert_equal("xyz", @user.reload.favorite_tags)
+      end
+
+      should "not allow a user to update another user's settings" do
+        put_auth user_path(@user), create(:owner_user), params: { user: { per_page: 123 }}
+
+        assert_response 403
+        assert_equal(20, @user.reload.per_page)
       end
 
       context "for a Member-level user" do

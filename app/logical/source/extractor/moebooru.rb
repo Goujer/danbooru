@@ -4,12 +4,8 @@
 module Source
   class Extractor
     class Moebooru < Source::Extractor
-      delegate :artist_name, :profile_url, :tag_name, :artist_commentary_title, :artist_commentary_desc, :dtext_artist_commentary_title, :dtext_artist_commentary_desc, to: :sub_extractor, allow_nil: true
+      delegate :artist_name, :profile_url, :display_name, :username, :tag_name, :artist_commentary_title, :artist_commentary_desc, :dtext_artist_commentary_title, :dtext_artist_commentary_desc, to: :sub_extractor, allow_nil: true
       delegate :site_name, :domain, to: :parsed_url
-
-      def match?
-        Source::URL::Moebooru === parsed_url
-      end
 
       def image_urls
         return [] if post_md5.blank? || file_ext.blank?
@@ -55,7 +51,7 @@ module Source
         def sub_extractor
           return nil if parent_extractor.present?
 
-          @sub_extractor ||= Source::Extractor.find(api_response[:source], default: nil, parent_extractor: self)
+          @sub_extractor ||= Source::Extractor.find(api_response[:source], default_extractor: nil, parent_extractor: self)
         end
 
         def file_ext

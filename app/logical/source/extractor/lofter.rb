@@ -4,10 +4,6 @@
 module Source
   class Extractor
     class Lofter < Source::Extractor
-      def match?
-        Source::URL::Lofter === parsed_url
-      end
-
       def image_urls
         if parsed_url.full_image_url.present?
           [parsed_url.full_image_url]
@@ -26,32 +22,97 @@ module Source
       end
 
       def images_from_photo_post
-        page_json.dig("postData", "data", "postData", "postView", "photoPostView", "photoLinks").to_a.pluck("orign")
+        post.dig(:photoPostView, :photoLinks).to_a.pluck(:orign)
       end
 
       def images_from_video_post
-        [page_json.dig("postData", "data", "postData", "postView", "videoPostView", "videoInfo", "originUrl")].compact
+        [post.dig(:videoPostView, :videoInfo, :originUrl)].compact
       end
 
       def images_from_text_post
-        content = page_json.dig("postData", "data", "postData", "postView", "textPostView", "content").to_s
-        html = Nokogiri::HTML5.fragment(content)
-        html.css("img").pluck("src")
+        post.dig(:textPostView, :content)&.parse_html&.css("img").to_a.pluck("src")
       end
 
       def images_from_answer_post
-        page_json.dig("postData", "data", "postData", "postView", "answerPostView", "images").to_a.pluck("orign")
+        post.dig(:answerPostView, :images).to_a.pluck("orign")
       end
 
       def profile_url
-        return nil if artist_name.blank?
-        "https://#{artist_name}.lofter.com"
+        "https://#{username}.lofter.com" if username.present?
       end
 
-      def page_url
-        return nil if illust_id.blank? || profile_url.blank?
+      def account_url
+        "https://www.lofter.com/mentionredirect.do?blogId=#{user_id}" if user_id.present?
+      end
 
-        "#{profile_url}/post/#{illust_id}"
+      def profile_urls
+        [profile_url, account_url].compact
+      end
+
+      def tags
+        post[:tagList].to_a.map do |tag|
+          [tag, "https://www.lofter.com/tag/#{Danbooru::URL.escape(tag)}"]
+        end
+      end
+
+      def display_name
+        blog[:blogNickName]&.strip
+      end
+
+      def username
+        blog[:blogName] || parsed_url.username || parsed_referer&.username
+      end
+
+      def user_id
+        blog[:blogId] || parsed_url.user_id || parsed_referer&.user_id
+      end
+
+      def artist_commentary_title
+        title_from_post || title_from_answer_post
+      end
+
+      def title_from_post
+        post[:title]
+      end
+
+      def title_from_answer_post
+        question = post.dig(:answerPostView, :questionInfo, :question)
+        "Q:#{question}" unless question.nil?
+      end
+
+      def artist_commentary_desc
+        post.dig(:photoPostView, :caption) || post.dig(:videoPostView, :caption) || post.dig(:textPostView, :content) || post.dig(:answerPostView, :answer)
+      end
+
+      def dtext_artist_commentary_desc
+        DText.from_html(html_artist_commentary_desc, base_url: profile_url)
+      end
+
+      def html_artist_commentary_desc
+        if post.dig(:photoPostView, :photoCaptions).present?
+          "#{image_captions} #{post.dig(:photoPostView, :caption)}"
+        else
+          artist_commentary_desc
+        end
+      end
+
+      def image_captions
+        image_urls = post.dig(:photoPostView, :photoLinks).to_a.pluck(:orign).map { |url| Source::URL.parse(url).full_image_url || url }
+        captions = post.dig(:photoPostView, :photoCaptions)
+
+        return nil unless captions.compact_blank.present?
+
+        image_urls.zip(captions).map do |image_url, caption|
+          <<~EOS.chomp
+            <img src="#{CGI.escapeHTML(image_url)}" alt="[image]">
+
+            <p>#{CGI.escapeHTML(caption)}</p>
+          EOS
+        end.join.presence
+      end
+
+      def http
+        super.headers("User-Agent": "Mozilla/5.0 (Android 14; Mobile; rv:115.0) Gecko/115.0 Firefox/115.0")
       end
 
       def http
@@ -64,68 +125,15 @@ module Source
 
       memoize def page_json
         script_text = page&.search("body script").to_a.map(&:text).grep(/\Awindow.__initialize_data__ = /).first.to_s
-        json = script_text.strip.delete_prefix("window.__initialize_data__ = ")
-        return {} if json.blank?
-        JSON.parse(json)
+        script_text.strip.delete_prefix("window.__initialize_data__ = ").parse_json || {}
       end
 
-      def tags
-        page_json.dig("postData", "data", "postData", "postView", "tagList").to_a.map do |tag|
-          [tag, "https://www.lofter.com/tag/#{Danbooru::URL.escape(tag)}"]
-        end
+      memoize def blog
+        page_json.dig(:postData, :data, :blogInfo) || {}
       end
 
-      def display_name
-        page_json.dig("postData", "data", "blogInfo", "blogNickName")&.strip
-      end
-
-      def other_names
-        [artist_name, display_name].compact_blank.uniq
-      end
-
-      def artist_commentary_title
-        title_from_post || title_from_answer_post
-      end
-
-      def title_from_post
-        page_json.dig("postData", "data", "postData", "postView", "title")
-      end
-
-      def title_from_answer_post
-        question = page_json.dig("postData", "data", "postData", "postView", "answerPostView", "questionInfo", "question")
-        return "Q:#{question}" unless question.nil?
-      end
-
-      def artist_commentary_desc
-        desc_from_photo_post || desc_from_video_post || desc_from_text_post || desc_from_answer_post
-      end
-
-      def desc_from_photo_post
-        page_json.dig("postData", "data", "postData", "postView", "photoPostView", "caption")
-      end
-
-      def desc_from_video_post
-        page_json.dig("postData", "data", "postData", "postView", "videoPostView", "caption")
-      end
-
-      def desc_from_text_post
-        page_json.dig("postData", "data", "postData", "postView", "textPostView", "content")
-      end
-
-      def desc_from_answer_post
-        page_json.dig("postData", "data", "postData", "postView", "answerPostView", "answer")
-      end
-
-      def dtext_artist_commentary_desc
-        DText.from_html(artist_commentary_desc)&.normalize_whitespace&.gsub(/\r\n/, "\n")&.gsub(/ *\n */, "\n")&.strip
-      end
-
-      def illust_id
-        parsed_url.work_id || parsed_referer&.work_id
-      end
-
-      def artist_name
-        parsed_url.username || parsed_referer&.username
+      memoize def post
+        page_json.dig(:postData, :data, :postData, :postView) || {}
       end
     end
   end

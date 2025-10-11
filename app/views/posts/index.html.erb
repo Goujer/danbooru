@@ -18,7 +18,7 @@
       </section>
     <% end %>
 
-    <%= render "posts/partials/index/blacklist" %>
+    <%= render BlacklistComponent.new(user: CurrentUser.user) %>
 
     <section id="tag-box">
       <h2>Tags</h2>
@@ -29,7 +29,7 @@
       <h2>Options</h2>
       <ul>
         <% if policy(SavedSearch).create? %>
-          <li><%= button_tag(bookmark_icon + " Save search", id: "save-search", class: "ui-button ui-widget ui-corner-all sub") %></li>
+          <li><%= button_tag(bookmark_icon + " Save search", id: "save-search") %></li>
         <% end %>
       </ul>
     </section>
@@ -59,7 +59,7 @@
 <% end %>
 
 <% content_for(:content) do %>
-  <menu id="post-sections" class="flex">
+  <menu id="post-sections" class="flex items-center mb-2">
     <li class="flex-grow-1 space-x-2">
       <a href="#" id="show-posts-link" class="active">Posts</a>
 
@@ -101,7 +101,7 @@
     <h2>Edit</h2>
 
     <%= edit_form_for(:post, html: { id: "quick-edit-form" }) do |f| %>
-      <%= f.input :tag_string, label: "Tags", as: :text, input_html: { "data-autocomplete": "tag-edit" } %>
+      <%= f.input :tag_string, label: "Tags", as: :text, input_html: { class: "text-sm", "data-autocomplete": "tag-edit" } %>
       <%= f.submit "Submit", data: { disable_with: false } %>
       <%= f.button :button, "Cancel", name: :cancel, type: :button %>
     <% end %>
@@ -123,7 +123,7 @@
             <%= wiki_page_other_names_list(wiki_page) %>
           <% end %>
 
-          <%= format_text(wiki_page.body) %>
+          <%= wiki_page.dtext_body.format_text %>
           <%= render "tag_relationships/alias_and_implication_list", tag: wiki_page.tag %>
 
           <% if wiki_page.tag&.is_deprecated? %>
@@ -148,7 +148,7 @@
         </h2>
 
         <div id="description" class="prose">
-          <%= format_text(@post_set.pool.description) %>
+          <%= @post_set.pool.dtext_description.format_text %>
         </div>
 
         <p class="mt-4">

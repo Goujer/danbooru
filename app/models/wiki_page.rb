@@ -4,18 +4,20 @@ class WikiPage < ApplicationRecord
   class RevertError < StandardError; end
 
   META_WIKIS = ["list_of_", "tag_group:", "pool_group:", "howto:", "about:", "help:", "template:","api:"]
+  MAX_WIKI_LENGTH = 80_000
 
   after_save :create_version
 
-  normalize :title, :normalize_title
-  normalize :body, :normalize_text
-  normalize :other_names, :normalize_other_names
+  normalizes :title, with: ->(title) { WikiPage.normalize_title(title) }
+  normalizes :body, with: ->(body) { body.unicode_normalize(:nfc).normalize_whitespace.strip }
+  normalizes :other_names, with: ->(other_names) { WikiPage.normalize_other_names(other_names) }
 
   array_attribute :other_names # XXX must come after `normalize :other_names`
+  dtext_attribute :body, media_embeds: true # defines :dtext_body
 
   validates :title, tag_name: true, presence: true, uniqueness: true, if: :title_changed?
   validates :body, visible_string: true, unless: -> { is_deleted? || other_names.present? }
-  validates :body, length: { maximum: 80_000 }, if: :body_changed?
+  validates :body, length: { maximum: MAX_WIKI_LENGTH }, if: :body_changed?
   validates :other_names, length: { maximum: 80, too_long: "can't have more than 80 names" }, if: :other_names_changed?
   validate :validate_rename
   validate :validate_other_names, if: :other_names_changed?
@@ -235,14 +237,15 @@ class WikiPage < ApplicationRecord
   end
 
   def tags
-    titles = DText.parse_wiki_titles(body).uniq
+    titles = DText.new(body).wiki_titles
     Tag.nonempty.undeprecated.named_or_aliased_in_order(titles)
   end
 
   def self.rewrite_wiki_links!(old_name, new_name)
     WikiPage.linked_to(old_name).each do |wiki|
       wiki.with_lock do
-        wiki.update!(body: DText.rewrite_wiki_links(wiki.body, old_name, new_name))
+        wiki.body = DText.new(wiki.body).rewrite_wiki_links(old_name, new_name).to_s
+        wiki.save!(validate: false)
       end
     end
   end

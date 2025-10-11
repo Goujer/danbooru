@@ -3,10 +3,6 @@
 # @see Source::URL::Booth
 class Source::Extractor
   class Booth < Source::Extractor
-    def match?
-      Source::URL::Booth === parsed_url
-    end
-
     def image_urls
       if parsed_url.full_image_url.present?
         [parsed_url.full_image_url]
@@ -25,11 +21,11 @@ class Source::Extractor
       parsed_url.profile_url || parsed_referer&.profile_url || Source::URL.profile_url(api_response.dig("shop", "url"))
     end
 
-    def tag_name
+    def username
       api_response.dig("shop", "subdomain")
     end
 
-    def artist_name
+    def display_name
       api_response.dig("shop", "name")
     end
 
@@ -42,17 +38,13 @@ class Source::Extractor
     end
 
     def dtext_artist_commentary_desc
-      DText.from_html(artist_commentary_desc).strip
+      DText.from_plaintext(artist_commentary_desc)
     end
 
     def tags
       api_response["tags"].to_a.map do |tag|
         [tag["name"], tag["url"]]
       end
-    end
-
-    def page_url
-      parsed_url.page_url || parsed_referer&.page_url
     end
 
     memoize def api_response

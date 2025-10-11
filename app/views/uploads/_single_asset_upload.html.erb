@@ -94,6 +94,10 @@
                   <%= link_to "Bad Source", wiki_page_path("bad_link"), class: "upload-source-warning button-danger button-xs" %>
                 <% end %>
 
+                <% if upload_media_asset.image_sample? %>
+                  <%= link_to "Image Sample", wiki_page_path("image_sample"), class: "upload-sample-warning button-danger button-xs" %>
+                <% end %>
+
                 <% if media_asset.is_ai_generated? %>
                   <%= link_to "AI-Generated", wiki_page_path("ai-generated"), class: "upload-ai-warning button-danger button-xs" %>
                 <% end %>
@@ -124,7 +128,7 @@
           <% t.panel("Tags", active: true) do %>
             <%= f.input :rating,
                         label: "Rating #{help_tooltip embed_wiki("help:rating_notice", classes: "text-xs"), link_class: "inactive-link" }".html_safe,
-                        wrapper_html: { class: "radio-button-group text-xs", "x-on:input": "$el.classList.remove('field_with_errors')" },
+                        wrapper_html: { class: "radio-button-group thin-x-scrollbar text-xs", "x-on:input": "$el.classList.remove('field_with_errors')" },
                         collection: Post::RATINGS.invert.reverse_each.to_h,
                         as: :radio_buttons,
                         selected: post.rating,
@@ -139,13 +143,13 @@
                 </span>
               </div>
 
-              <%= f.input :tag_string, label: false, hint: tag.span("Ctrl+Enter to submit", class: "desktop-only"), input_html: { "data-autocomplete": "tag-edit", "data-shortcut": "e", value: post.tag_string } %>
+              <%= f.input :tag_string, label: false, hint: tag.span("Ctrl+Enter to submit", class: "desktop-only"), input_html: { class: "text-sm", "data-autocomplete": "tag-edit", "data-shortcut": "e", value: post.tag_string } %>
 
-              <div class="mb-4">
-                <%= f.submit "Post", class: "button-primary button-sm" %>
+              <div class="mb-4 flex items-center gap-2">
+                <%= f.submit "Post", class: "button-primary" %>
 
                 <% if CurrentUser.is_contributor? %>
-                  <%= f.input :is_pending, as: :boolean, label: "Upload for approval", wrapper_html: { class: "inline-block !m-0" }, input_html: { checked: post.is_pending? } %>
+                  <%= f.input :is_pending, as: :boolean, label: "Upload for approval", wrapper_html: { class: "!m-0" }, input_html: { checked: post.is_pending? } %>
                 <% else %>
                   <span id="upload-limit" class="fineprint">Upload limit: <%= render "users/upload_limit", user: CurrentUser.user %></span>
                 <% end %>
@@ -166,10 +170,12 @@
 
             <%= f.input :source, as: :string, input_html: { value: post.source } %>
 
-            <%= f.input :artist_commentary_title, as: :string, label: "Original Title", input_html: { value: post&.artist_commentary&.original_title } %>
-            <%= f.input :artist_commentary_desc, as: :text, label: "Original Description", input_html: { value: post&.artist_commentary&.original_description } %>
-            <%= f.input :translated_commentary_title, as: :string, label: "Translated Title", input_html: { value: post&.artist_commentary&.translated_title } %>
-            <%= f.input :translated_commentary_desc, as: :text, label: "Translated Description", input_html: { value: post&.artist_commentary&.translated_description } %>
+            <%= f.simple_fields_for :artist_commentary, post.artist_commentary do |fa| %>
+              <%= fa.input :original_title, as: :string %>
+              <%= fa.input :original_description, as: :dtext, label: "Original description" %>
+              <%= fa.input :translated_title, as: :string %>
+              <%= fa.input :translated_description, as: :dtext, label: "Translated description" %>
+            <% end %>
           <% end %>
 
           <% t.panel("Similar") do %>

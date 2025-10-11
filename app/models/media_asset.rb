@@ -4,6 +4,7 @@ class MediaAsset < ApplicationRecord
   class Error < StandardError; end
 
   FILE_TYPES = %w[jpg png gif webp avif mp4 webm swf zip]
+  FILE_MIME_TYPES = %w[image/jpeg image/png image/gif image/webp image/avif video/mp4 video/webm application/x-shockwave-flash video/x-ugoira]
   FILE_KEY_LENGTH = 9
   VARIANTS = %i[180x180 360x360 720x720 sample full original]
   MAX_FILE_SIZE = Danbooru.config.max_file_size.to_i
@@ -12,7 +13,6 @@ class MediaAsset < ApplicationRecord
   MAX_IMAGE_WIDTH = Danbooru.config.max_image_width
   MAX_IMAGE_HEIGHT = Danbooru.config.max_image_height
   LARGE_IMAGE_WIDTH = Danbooru.config.large_image_width
-  STORAGE_SERVICE = Danbooru.config.storage_manager
 
   attribute :id
   attribute :created_at
@@ -33,6 +33,8 @@ class MediaAsset < ApplicationRecord
   has_many :uploads, through: :upload_media_assets
   has_many :uploaders, through: :uploads, class_name: "User", foreign_key: :uploader_id
   has_many :ai_tags
+  has_many :dtext_links, -> { embedded_media_asset }, foreign_key: :link_target
+  has_many :embedding_wiki_pages, through: :dtext_links, source: :model, source_type: "WikiPage"
 
   delegate :frame_delays, :metadata, to: :media_metadata, allow_nil: true
   delegate :is_non_repeating_animation?, :is_greyscale?, :is_rotated?, :is_ai_generated?, :has_sound?, to: :metadata
@@ -49,7 +51,7 @@ class MediaAsset < ApplicationRecord
   # Expunged: The asset's files have been permanently deleted.
   # Failed: The asset failed to upload. The asset may be in a partially uploaded state, with some
   #         files missing or incompletely transferred.
-  enum status: {
+  enum :status, {
     processing: 100,
     active: 200,
     deleted: 300,
@@ -336,7 +338,7 @@ class MediaAsset < ApplicationRecord
       end
 
       def validate_media_file!(media_file, uploader)
-        if !media_file.file_ext.to_s.in?(FILE_TYPES)
+        if !media_file.mime_type.to_s.in?(FILE_MIME_TYPES)
           raise Error, "File is not an image or video"
         elsif !media_file.is_supported?
           raise Error, "File type is not supported"
@@ -467,7 +469,7 @@ class MediaAsset < ApplicationRecord
     end
 
     def storage_service
-      STORAGE_SERVICE
+      Danbooru.config.storage_manager
     end
 
     def backup_storage_service
@@ -547,6 +549,37 @@ class MediaAsset < ApplicationRecord
     end
   end
 
+  concerning :RatingMethods do
+    # @return [Hash<String, Integer>] A hash of AI ratings ('g', 's', 'q', or 'e') with their scores.
+    def ai_ratings
+      ratings = ai_tags.includes(:tag).select { |ai| ai.tag.name.starts_with?("rating:") }
+      ratings.to_h { |ai_tag| [ai_tag.tag.name.delete_prefix("rating:"), ai_tag.score] }
+    end
+
+    # @return [Array<String, Integer>] The highest confidence AI rating, along with its score.
+    def ai_rating
+      ai_ratings.max_by(&:second) || [Post::RATINGS.keys.first, 0]
+    end
+
+    # g => 0, s => 1, q => 2, e => 3
+    def ai_rating_id
+      Post::RATINGS.keys.index(ai_rating.first)
+    end
+
+    def pretty_ai_rating
+      Post::RATINGS.fetch(ai_rating.first)
+    end
+
+    def is_ai_nsfw?
+      ai_rating.first.in?(%w[q e])
+    end
+
+    # @param tags [String] The AI tag query.
+    def ai_tags_match?(tags)
+      MediaAsset.where(id: id).ai_tags_match(tags).exists?
+    end
+  end
+
   def source_urls
     urls = upload_media_assets.map do |uma|
       Source::URL.page_url(uma.source_url) || Source::URL.page_url(uma.page_url) || uma.page_url || uma.source_url
@@ -571,6 +604,6 @@ class MediaAsset < ApplicationRecord
   end
 
   def self.available_includes
-    %i[post media_metadata ai_tags]
+    %i[post media_metadata ai_tags dtext_links embedding_wiki_pages]
   end
 end

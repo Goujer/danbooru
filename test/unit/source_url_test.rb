@@ -9,6 +9,8 @@ class SourceURLTest < ActiveSupport::TestCase
         assert_nil(Source::URL.parse("https://"))
         assert_nil(Source::URL.parse("https://./"))
         assert_nil(Source::URL.parse("https://!!!.com"))
+        assert_nil(Source::URL.parse("https://[]"))
+        assert_nil(Source::URL.parse("https://[]:3000"))
         # assert_nil(Source::URL.parse("https://foo@gmail.com"))
       end
 
@@ -16,6 +18,10 @@ class SourceURLTest < ActiveSupport::TestCase
         assert_not_nil(Source::URL.parse("https://foo.com."))
         assert_not_nil(Source::URL.parse("https://user:pass@foo.com:80"))
         assert_not_nil(Source::URL.parse("https://localhost"))
+        assert_not_nil(Source::URL.parse("https://127.0.0.1"))
+        assert_not_nil(Source::URL.parse("https://127.0.0.1:3000"))
+        assert_not_nil(Source::URL.parse("https://[::1]"))
+        assert_not_nil(Source::URL.parse("https://[::1]:3000"))
       end
 
       should "normalize URLs" do
@@ -64,6 +70,27 @@ class SourceURLTest < ActiveSupport::TestCase
         assert_not(Source::URL.parse("http://google.com") === Source::URL.parse("http://google.com?"))
         assert_not(Source::URL.parse("http://google.com") === Source::URL.parse("http://google.com#"))
         assert_not(Source::URL.parse("http://google.com") === Source::URL.parse("http://user:pass@google.com#"))
+      end
+    end
+
+    context "the #with method" do
+      should "work" do
+        assert_equal("http://google.com/image.jpg?foo=baz", Source::URL.parse("http://google.com/image.jpg?foo=bar").with_params(foo: "baz").to_s)
+        assert_equal("http://google.com/image.jpg?foo=", Source::URL.parse("http://google.com/image.jpg?foo=bar").with_params(foo: "").to_s)
+        assert_equal("http://google.com/image.jpg", Source::URL.parse("http://google.com/image.jpg?foo=bar").with_params(foo: nil).to_s)
+
+        assert_equal("https://example.com/image.jpg?foo=bar", Source::URL.parse("http://google.com/image.jpg?foo=bar").with(site: "https://example.com").to_s)
+        assert_equal("http://google.com/image.png?foo=bar", Source::URL.parse("http://google.com/image.jpg?foo=bar").with(file_ext: "png").to_s)
+        assert_equal("http://google.com/test.jpg?foo=bar", Source::URL.parse("http://google.com/image.jpg?foo=bar").with(filename: "test").to_s)
+        assert_equal("http://google.com/test.png?foo=bar", Source::URL.parse("http://google.com/image.jpg?foo=bar").with(basename: "test.png").to_s)
+      end
+    end
+
+    context "the #escape method" do
+      should "work" do
+        assert_equal("fate%2Fstay_night", Source::URL.escape("fate/stay_night"))
+        assert_equal("大丈夫%3Fおっぱい揉む%3F", Source::URL.escape("大丈夫?おっぱい揉む?"))
+        assert_equal("", Source::URL.escape(nil))
       end
     end
   end

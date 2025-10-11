@@ -45,7 +45,7 @@ class Post < ApplicationRecord
   deletable
   has_bit_flags %w[has_embedded_notes _unused_has_cropped is_taken_down]
 
-  normalize :source, :normalize_source
+  normalizes :source, with: ->(source) { Post.normalize_source(source) }, apply_to_nil: true
   before_validation :merge_old_changes
   before_validation :apply_pre_metatags
   before_validation :validate_new_tags
@@ -70,6 +70,7 @@ class Post < ApplicationRecord
   before_save :has_enough_tags
   before_save :update_tag_post_counts
   before_save :update_tag_category_counts
+  before_create :remove_blank_artist_commentary
   before_create :autoban
   after_save :create_version
   after_save :update_parent_on_save
@@ -97,6 +98,8 @@ class Post < ApplicationRecord
   has_many :events, class_name: "PostEvent"
   has_many :mod_actions, as: :subject, dependent: :destroy
   has_many :reactions, as: :model, dependent: :destroy, class_name: "Reaction"
+  has_many :dtext_links, -> { embedded_post }, foreign_key: :link_target
+  has_many :embedding_wiki_pages, through: :dtext_links, source: :model, source_type: "WikiPage"
 
   attr_accessor :old_tag_string, :old_parent_id, :old_source, :old_rating, :post_edit
 
@@ -118,24 +121,19 @@ class Post < ApplicationRecord
     has_many :versions, -> { Rails.env.test? ? order("post_versions.updated_at ASC, post_versions.id ASC") : order("post_versions.updated_at ASC") }, class_name: "PostVersion", dependent: :destroy
   end
 
-  def self.new_from_upload(upload_media_asset, tag_string: nil, rating: nil, parent_id: nil, source: nil, artist_commentary_title: nil, artist_commentary_desc: nil, translated_commentary_title: nil, translated_commentary_desc: nil, is_pending: nil, add_artist_tag: false)
+  def self.new_from_upload(upload_media_asset, tag_string: nil, rating: nil, parent_id: nil, source: nil, artist_commentary: {}, is_pending: nil, add_artist_tag: false)
     upload = upload_media_asset.upload
     media_asset = upload_media_asset.media_asset
 
     # XXX depends on CurrentUser
-    commentary = ArtistCommentary.new(
-      original_title: artist_commentary_title,
-      original_description: artist_commentary_desc,
-      translated_title: translated_commentary_title,
-      translated_description: translated_commentary_desc,
-    )
+    commentary = ArtistCommentary.new(**artist_commentary)
 
     if add_artist_tag
       tag_string = "#{tag_string} #{upload_media_asset.source_extractor&.artists.to_a.map(&:tag).map(&:name).join(" ")}".strip
       tag_string += " " if tag_string.present?
     end
 
-    post = Post.new(
+    Post.new(
       uploader: upload.uploader,
       md5: media_asset&.md5,
       file_ext: media_asset&.file_ext,
@@ -147,7 +145,7 @@ class Post < ApplicationRecord
       rating: rating,
       parent_id: parent_id,
       is_pending: !upload.uploader.is_contributor? || is_pending.to_s.truthy?,
-      artist_commentary: (commentary if commentary.any_field_present?),
+      artist_commentary: commentary,
     )
   end
 
@@ -297,7 +295,7 @@ class Post < ApplicationRecord
     end
 
     def autoban
-      if has_tag?("banned_artist") || has_tag?("paid_reward")
+      if has_tag?("paid_reward") || tags.any? { |tag| tag.artist? && tag.artist&.is_banned? }
         self.is_banned = true
       end
     end
@@ -324,6 +322,10 @@ class Post < ApplicationRecord
 
     def pretty_rating
       RATINGS.fetch(rating)
+    end
+
+    def is_nsfw?
+      rating.in?(%w[q e])
     end
 
     def parsed_source
@@ -698,7 +700,7 @@ class Post < ApplicationRecord
 
   concerning :PoolMethods do
     def pools
-      Pool.where("pools.post_ids && array[?]", id)
+      Pool.where_array_includes_all(:post_ids, [id])
     end
 
     def has_active_pools?
@@ -1766,12 +1768,7 @@ class Post < ApplicationRecord
   concerning :PixivMethods do
     def parse_pixiv_id
       self.pixiv_id = nil
-      return unless web_source?
-
-      site = Source::Extractor::Pixiv.new(source)
-      if site.match?
-        self.pixiv_id = site.illust_id
-      end
+      self.pixiv_id = parsed_source.work_id if parsed_source.is_a?(Source::URL::Pixiv)
     end
   end
 
@@ -1835,6 +1832,16 @@ class Post < ApplicationRecord
       if uploader.upload_limit.limited?
         errors.add(:uploader, "have reached your upload limit. Please wait for your pending uploads to be approved before uploading more")
         throw :abort # Don't bother returning other validation errors if we're upload-limited.
+      end
+    end
+
+    def post_is_not_allowed
+      return if uploader.posts.active.exists?
+
+      blocked_tags = Danbooru.config.new_uploader_blocked_ai_tags
+      if blocked_tags.present? && ai_tags_match?(blocked_tags)
+        errors.add(:base, "Post failed, try again later")
+        throw :abort # Don't bother returning other validation errors
       end
     end
 
@@ -1922,6 +1929,17 @@ class Post < ApplicationRecord
     end
   end
 
+  concerning :ArtistCommentaryMethods do
+    def remove_blank_artist_commentary
+      self.artist_commentary = nil if !artist_commentary&.any_field_present?
+    end
+  end
+
+  # @param tags [String] The AI tag query.
+  def ai_tags_match?(tags)
+    media_asset.ai_tags_match?(tags)
+  end
+
   def safeblocked?
     CurrentUser.safe_mode? && (rating != "g" || Danbooru.config.safe_mode_restricted_tags.any? { |tag| tag.in?(tag_array) })
   end
@@ -1985,7 +2003,8 @@ class Post < ApplicationRecord
     %i[
       uploader approver flags appeals events parent children notes
       comments approvals disapprovals replacements
-      artist_commentary media_asset media_metadata ai_tags
+      artist_commentary media_asset media_metadata ai_tags dtext_links
+      embedding_wiki_pages
     ]
   end
 end

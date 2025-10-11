@@ -27,7 +27,6 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
       @user = travel_to(1.month.ago) {create(:user)}
       @post = as(@user) { create(:post, tag_string: "aaaa") }
       Danbooru.config.stubs(:canonical_url).returns("http://www.example.com")
-      Danbooru.config.stubs(:hostname).returns("www.example.com")
     end
 
     context "index action" do
@@ -194,8 +193,8 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
         end
 
         should "show a notice for a single tag search with multiple pending BURs in multiple topics" do
-          topic1 = as(@user) { create(:forum_topic) }
-          topic2 = as(@user) { create(:forum_topic) }
+          topic1 = create(:forum_topic)
+          topic2 = create(:forum_topic)
           create(:post, tag_string: "foo")
           create(:bulk_update_request, script: "create alias foo -> bar", forum_topic: topic1)
           create(:bulk_update_request, script: "create alias foo -> baz", forum_topic: topic1)
@@ -749,6 +748,15 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
         assert_equal("tagme", @post.tag_string)
       end
 
+      should "apply the upvote:self metatag" do
+        @user = create(:user)
+        @post = create_post!(user: @user, tag_string: "test upvote:self")
+
+        assert_redirected_to @post
+        assert_equal("test", @post.reload.tag_string)
+        assert_equal(true, @post.votes.positive.exists?(user: @user))
+      end
+
       should "set the source" do
         @post = create_post!(source: "https://www.example.com")
 
@@ -756,8 +764,10 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
         assert_equal("https://www.example.com", @post.source)
       end
 
-      should "autoban the post when it is tagged banned_artist" do
-        @post = create_post!(tag_string: "banned_artist")
+      should "autoban the post when it is from a banned artist" do
+        artist = create(:artist, is_banned: true)
+        @post = create_post!(tag_string: artist.name)
+
         assert_equal(true, @post.is_banned?)
       end
 
@@ -769,9 +779,11 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
       should "not create a post when the uploader is upload-limited" do
         @user = create(:user, upload_points: 0)
 
-        @user.upload_limit.upload_slots.times do
+        @user.upload_limit.upload_slots.times do |n|
           assert_difference("Post.count", 1) do
-            create_post!(user: @user)
+            travel(n.hour) do
+              create_post!(user: @user)
+            end
           end
         end
 
@@ -799,10 +811,12 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
         assert_difference("ArtistCommentary.count", 1) do
           @post = create_post!(
             user: @user,
-            artist_commentary_title: "original title",
-            artist_commentary_desc: "original desc",
-            translated_commentary_title: "translated title",
-            translated_commentary_desc: "translated desc",
+            artist_commentary: {
+              original_title: "original title",
+              original_description: "original desc",
+              translated_title: "translated title",
+              translated_description: "translated desc",
+            },
           )
         end
 
@@ -817,7 +831,9 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
         assert_difference("ArtistCommentary.count", 1) do
           @post = create_post!(
             user: @user,
-            artist_commentary_title: "title",
+            artist_commentary: {
+              original_title: "title",
+            },
           )
         end
 
@@ -832,10 +848,12 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
         assert_no_difference("ArtistCommentary.count") do
           @post = create_post!(
             user: @user,
-            artist_commentary_title: "",
-            artist_commentary_desc: "",
-            translated_commentary_title: "",
-            translated_commentary_desc: "",
+            artist_commentary: {
+              original_title: "",
+              original_description: "",
+              translated_title: "",
+              translated_description: "",
+            },
           )
         end
 
@@ -869,10 +887,40 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
         assert_post_source_equals("https://h.bilibili.com/83341894", "https://i0.hdslb.com/bfs/album/669c0974a2a7508cbbb60b185eddaa0ccf8c5b7a.jpg", "https://h.bilibili.com/83341894")
 
         assert_post_source_equals("https://i0.hdslb.com/bfs/new_dyn/675526fd8baa2f75d7ea0e7ea957bc0811742550.jpg", "https://i0.hdslb.com/bfs/new_dyn/675526fd8baa2f75d7ea0e7ea957bc0811742550.jpg")
-        assert_post_source_equals("https://t.bilibili.com/686082748803186697", "https://i0.hdslb.com/bfs/new_dyn/675526fd8baa2f75d7ea0e7ea957bc0811742550.jpg", "https://t.bilibili.com/686082748803186697")
+        assert_post_source_equals("https://www.bilibili.com/opus/686082748803186697", "https://i0.hdslb.com/bfs/new_dyn/675526fd8baa2f75d7ea0e7ea957bc0811742550.jpg", "https://t.bilibili.com/686082748803186697")
 
-        assert_post_source_equals("https://i.4cdn.org/vt/1611919211191.jpg", "https://i.4cdn.org/vt/1611919211191.jpg")
-        assert_post_source_equals("https://boards.4channel.org/vt/thread/1#p1", "https://i.4cdn.org/vt/1611919211191.jpg", "https://boards.4channel.org/vt/thread/1")
+        assert_post_source_equals("https://i.4cdn.org/vt/1745613423284732.jpg", "https://i.4cdn.org/vt/1745613423284732.jpg")
+        assert_post_source_equals("https://boards.4chan.org/vt/thread/99394683#p99394683", "https://i.4cdn.org/vt/1745613423284732.jpg", "https://boards.4chan.org/vt/thread/99394683")
+      end
+
+      should "not normalize source URLs to NFC form" do
+        # ブ = U+30D5 U+3099 ('KATAKANA LETTER HU', 'COMBINING KATAKANA-HIRAGANA VOICED SOUND MARK')
+        source = "https://tuyu-official.jp/wp/wp-content/uploads/2022/09/雨模様［サブスクジャケット］.jpeg"
+        assert_post_source_equals(source, source)
+      end
+
+      context "when Danbooru.config.new_uploader_blocked_ai_tags is set" do
+        setup do
+          @user = create(:user)
+          @media_asset = create(:media_asset)
+          @media_asset.ai_tags.create!(tag: create(:tag, name: "touhou"), score: 90)
+        end
+
+        should "not create a post when the post is blocked" do
+          Danbooru.config.stubs(:new_uploader_blocked_ai_tags).returns("touhou,>80%")
+
+          assert_no_difference("Post.count") do
+            create_post!(user: @user, media_asset: @media_asset)
+          end
+        end
+
+        should "create a post when the post is not blocked" do
+          Danbooru.config.stubs(:new_uploader_blocked_ai_tags).returns("touhou,>95%")
+
+          assert_difference("Post.count", 1) do
+            create_post!(user: @user, media_asset: @media_asset)
+          end
+        end
       end
 
       should "not normalize source URLs to NFC form" do

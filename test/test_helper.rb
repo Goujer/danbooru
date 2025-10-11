@@ -1,8 +1,8 @@
 ENV["RAILS_ENV"] = "test"
 
-require 'simplecov'
+require "simplecov"
 require_relative "../config/environment"
-require 'rails/test_help'
+require "rails/test_help"
 
 Dir["#{Rails.root}/test/factories/*.rb"].sort.each { |file| require file }
 Dir["#{Rails.root}/test/test_helpers/*.rb"].sort.each { |file| require file }
@@ -10,7 +10,7 @@ Dir["#{Rails.root}/test/test_helpers/*.rb"].sort.each { |file| require file }
 Minitest::Reporters.use!([
   Minitest::Reporters::ProgressReporter.new,
   Minitest::Reporters::HtmlReporter.new(reports_dir: "tmp/html-test-results"),
-  Minitest::Reporters::JUnitReporter.new("tmp/junit-test-results")
+  Minitest::Reporters::JUnitReporter.new("tmp/junit-test-results"),
 ])
 
 Shoulda::Matchers.configure do |config|
@@ -30,10 +30,10 @@ class ActiveSupport::TestCase
   include ReportbooruHelper
   include AutotaggerHelper
   include DatabaseTestHelper
-  include DownloadTestHelper
   include IqdbTestHelper
   include UploadTestHelper
-  include SourceTestHelper
+  include ExtractorTestHelper
+  include UrlTestHelper
   extend StripeTestHelper
   extend NormalizeAttributeHelper
 
@@ -94,6 +94,14 @@ class ActionDispatch::IntegrationTest
   register_encoder :html, response_parser: ->(body) { Nokogiri.HTML5(body) }
 
   def login_as(user)
+    current_user_id = request&.session&.dig(:user_id)
+
+    if current_user_id == user.id
+      return
+    elsif current_user_id.present? && current_user_id != user.id
+      delete session_path # logout
+    end
+
     post session_path, params: { session: { name: user.name, password: user.password } }
 
     if user.totp.present?
@@ -122,3 +130,5 @@ class ActionDispatch::IntegrationTest
     method_authenticated(:delete, url, user, **options)
   end
 end
+
+module Source::Tests; end

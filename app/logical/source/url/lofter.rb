@@ -3,7 +3,7 @@
 class Source::URL::Lofter < Source::URL
   RESERVED_USERNAMES = %w[i uls www]
 
-  attr_reader :username, :work_id, :full_image_url
+  attr_reader :username, :user_id, :work_id, :full_image_url
 
   def self.match?(url)
     url.domain.in?(%w[lofter.com 127.net lf127.net 126.net])
@@ -17,7 +17,7 @@ class Source::URL::Lofter < Source::URL
     # https://imglf4.lf127.net/img/b7c3e00acd19f7c0/azVib0c4ZHd2WVd6UEhkWG93c1QxRXM3V3VVM2pab0pqaXB3UFV4WG1tVT0.png?imageView&thumbnail=1680x0&quality=96&stripmeta=0
     # http://imglf0.nosdn.127.net/img/cHl3bXNZdDRaaHBnNWJuN1Y4OXBqR01CeVBZSVNmU2FWZWtHc1h4ZTZiUGxlRzMwZnFDM1JnPT0.jpg (404)
     in _, ("127.net" | "lf127.net"), "img", *rest
-      @full_image_url = url.omit(:query).to_s
+      @full_image_url = without(:query).to_s
 
     # https://vodm2lzexwq.vod.126.net/vodm2lzexwq/Pc5jg1nL_3039990631_sd.mp4?resId=254486990bfa2cd7aa860229db639341_3039990631_1&sign=4j02HTHXqNfhaF%2B%2FO14Ny%2F9SMNZj%2FIjpJDCqXfYa4aM%3D
     in _, "126.net", *rest
@@ -31,6 +31,10 @@ class Source::URL::Lofter < Source::URL
     # http://www.lofter.com/blog/semblance
     in _, "lofter.com", ("app" | "blog"), username
       @username = username
+
+    # https://www.lofter.com/mentionredirect.do?blogId=1278105311
+    in _, "lofter.com", "mentionredirect.do" if params[:blogId].present?
+      @user_id = params[:blogId]
 
     # https://gengar563.lofter.com/post/1e82da8c_1c98dae1b
     # https://gengar563.lofter.com/front/post/1e82da8c_1c98dae1b
@@ -64,6 +68,10 @@ class Source::URL::Lofter < Source::URL
   end
 
   def profile_url
-    "https://#{username}.lofter.com" if username.present?
+    if username.present?
+      "https://#{username}.lofter.com"
+    elsif user_id.present?
+      "https://www.lofter.com/mentionredirect.do?blogId=#{user_id}"
+    end
   end
 end

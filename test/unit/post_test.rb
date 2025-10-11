@@ -448,8 +448,7 @@ class PostTest < ActiveSupport::TestCase
 
       context "with a banned artist" do
         should "ban the post" do
-          artist = create(:artist)
-          implication = create(:tag_implication, antecedent_name: artist.name, consequent_name: "banned_artist")
+          artist = create(:artist, is_banned: true)
           post = create(:post, tag_string: artist.name)
 
           assert_equal(true, post.is_banned?)
@@ -1551,7 +1550,7 @@ class PostTest < ActiveSupport::TestCase
 
       context "a post with a https:// source" do
         should "remove the non-web_source tag" do
-          @post.update!(source: "https://www.google.com", tag_string: "non-web_source")
+          @post.update!(source: "https://www.example.com", tag_string: "non-web_source")
           @post.save!
           assert_equal("tagme", @post.tag_string)
         end
@@ -1860,14 +1859,8 @@ class PostTest < ActiveSupport::TestCase
       end
 
       context "with a source" do
-        context "that contains unicode characters" do
-          should "normalize the source to NFC form" do
-            source1 = "poke\u0301mon" # pokémon (nfd form)
-            source2 = "pok\u00e9mon"  # pokémon (nfc form)
-            @post.update!(source: source1)
-            assert_equal(source2, @post.source)
-          end
-        end
+        should normalize_attribute(:source).from("pokémon".unicode_normalize(:nfd)).to("pokémon".unicode_normalize(:nfc))
+        should normalize_attribute(:source).from(nil).to("")
 
         context "that is not from pixiv" do
           should "clear the pixiv id" do
@@ -2071,12 +2064,6 @@ class PostTest < ActiveSupport::TestCase
         assert(@parent.votes.where(user: @user1).exists?)
         assert_equal(2, @parent.score)
       end
-    end
-  end
-
-  context "Pools:" do
-    setup do
-      SqsService.any_instance.stubs(:send_message)
     end
   end
 

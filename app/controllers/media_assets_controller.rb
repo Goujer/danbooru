@@ -3,8 +3,6 @@
 class MediaAssetsController < ApplicationController
   respond_to :html, :json, :xml, :js
 
-  rate_limit :image, rate: 5.0/1.seconds, burst: 50
-
   def index
     @limit = params.fetch(:limit, CurrentUser.user.per_page).to_i.clamp(0, PostSets::Post::MAX_PER_PAGE)
     @preview_size = params[:size].presence || cookies[:post_preview_size].presence || MediaAssetGalleryComponent::DEFAULT_SIZE
@@ -39,8 +37,8 @@ class MediaAssetsController < ApplicationController
   def destroy
     @media_asset = authorize MediaAsset.find(params[:id])
     @media_asset.trash!(CurrentUser.user)
-    flash[:notice] = "File deleted"
-    respond_with(@media_asset)
+
+    respond_with(@media_asset, notice: "File deleted")
   end
 
   def image

@@ -23,7 +23,7 @@ Rails.application.routes.draw do
   end
   namespace :moderator do
     namespace :post do
-      resources :posts, :only => [:delete, :expunge, :confirm_delete] do
+      resources :posts, only: [] do
         member do
           post :expunge
           get :confirm_move_favorites
@@ -61,7 +61,6 @@ Rails.application.routes.draw do
     end
     collection do
       get :show_or_new
-      get :banned
     end
   end
   resources :artist_urls, only: [:index]
@@ -145,6 +144,7 @@ Rails.application.routes.draw do
   resources :media_metadata, only: [:index]
 
   resources :metrics, only: [:index], defaults: { format: :text } do
+    get "/statistics", on: :collection, to: "metrics#statistics", as: :statistics
     get "/instance", on: :collection, to: "metrics#instance", as: :instance
   end
 
@@ -157,12 +157,11 @@ Rails.application.routes.draw do
   resources :modqueue, only: [:index]
   resources :news_updates
   resources :notes do
-    member do
-      put :revert
-    end
+    put :revert, on: :member
+    get :preview, on: :collection
+    post :preview, on: :collection
   end
   resources :note_versions, :only => [:index, :show]
-  resource :note_previews, only: [:create, :show]
   resource :password_reset, only: [:create, :show, :edit, :update]
   resource :password, only: [:edit, :update]
   resources :pools do
@@ -211,7 +210,7 @@ Rails.application.routes.draw do
   resources :post_flags
   resources :post_approvals, only: [:create, :index, :show]
   resources :post_disapprovals
-  resources :post_versions, :only => [:index, :search] do
+  resources :post_versions, only: [:index] do
     member do
       put :undo
     end
@@ -265,13 +264,16 @@ Rails.application.routes.draw do
     resources :actions, only: [:index], controller: "user_actions", as: "user_actions"
     resources :favorites, only: [:index, :create, :destroy]
     resources :favorite_groups, controller: "favorite_groups", only: [:index], as: "favorite_groups"
-    resource :email, only: [:show, :edit, :update] do
+    resource :email, only: [:show, :edit, :update, :destroy] do
       get :verify
       post :send_confirmation
     end
     resource :password, only: [:edit, :update]
     resource :totp, only: [:edit, :update, :destroy]
-    resources :backup_codes, only: [:index, :create]
+    resources :backup_codes, only: [:index, :create] do
+      get :confirm_recover, on: :collection
+      post :recover, on: :collection
+    end
     resources :api_keys, only: [:new, :create, :edit, :update, :index, :destroy]
     resources :uploads, only: [:index]
     resources :user_events, only: [:index], path: "events"
@@ -293,7 +295,7 @@ Rails.application.routes.draw do
   resources :user_events, only: [:index]
   resources :user_feedbacks, except: [:destroy]
   resources :user_name_change_requests, only: [:new, :create, :show, :index]
-  resources :site_credentials
+  resources :site_credentials, except: [:edit]
   resources :webhooks do
     post :receive, on: :collection
     post :authorize_net, on: :collection
@@ -302,7 +304,7 @@ Rails.application.routes.draw do
     put :revert, on: :member
     get :show_or_new, on: :collection
   end
-  resources :wiki_page_versions, :only => [:index, :show, :diff] do
+  resources :wiki_page_versions, only: [:index, :show] do
     collection do
       get :diff
     end
@@ -355,6 +357,7 @@ Rails.application.routes.draw do
   get "/404" => "static#not_found", :as => "not_found"
   get "/2257" => "static#2257", :as => "usc_2257"
   get "/contact" => "static#contact", :as => "contact"
+  get "/statistics" => "metrics#statistics", as: "statistics"
   get "/.well-known/change-password", to: redirect("/password/edit", status: 302)
 
   get "/static/keyboard_shortcuts" => "static#keyboard_shortcuts", :as => "keyboard_shortcuts"

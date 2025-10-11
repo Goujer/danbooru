@@ -70,16 +70,6 @@ module ApplicationHelper
     url_for(request.query_parameters.merge(params))
   end
 
-  def nav_link_to(text, url, **options)
-    klass = options.delete(:class)
-
-    if nav_link_match(params[:controller], url)
-      klass = "#{klass} current"
-    end
-
-    li_link_to(text, url, id_prefix: "nav-", class: klass, **options)
-  end
-
   def subnav_link_to(*args, **options, &block)
     li_link_to(*args, id_prefix: "subnav-", **options, &block)
   end
@@ -90,15 +80,19 @@ module ApplicationHelper
     id = text.downcase.gsub(/[^a-z ]/, "").parameterize if text.present? && id.blank?
     id = id_prefix.to_s + id.to_s
 
-    tag.li(link_to(*args, id: "#{id}-link", **options, &block), id: id, class: klass)
+    link_to(*args, id: id, class: "py-1.5 px-3 #{klass}", **options, &block)
   end
 
-  def format_text(text, **options)
-    raw DText.format_text(text, **options)
+  def subnav_divider
+    tag.span("|", class: "text-muted select-none")
+  end
+
+  def format_text(text, references: DText.preprocess([text]), **options)
+    DText.new(text, **options).format_text(references:)
   end
 
   def strip_dtext(text)
-    DText.strip_dtext(text)
+    DText.new(text).strip_dtext
   end
 
   def time_tag(content, time, **options)
@@ -154,15 +148,15 @@ module ApplicationHelper
         human_time = time_ago_in_words(time).gsub(/about|over|less than|almost/, "")
         time_tag("#{human_time} ago", time)
       elsif time > Time.zone.today.beginning_of_year
-        time_tag(time.strftime("%b %e"), time)
+        time_tag(time.strftime("%B #{time.day.ordinalize}"), time)
       else
-        time_tag(time.strftime("%b %e, %Y"), time)
+        time_tag(time.strftime("%B #{time.day.ordinalize}, %Y"), time)
       end
     elsif time.future?
       if time < 1.day.from_now
         time_tag("in #{time_ago_in_words(time)}", time)
       else
-        time_tag(time.strftime("%b %e, %Y"), time)
+        time_tag(time.strftime("%B #{time.day.ordinalize}, %Y"), time)
       end
     end
   end
@@ -259,7 +253,7 @@ module ApplicationHelper
 
   def embed_wiki(title, classes: nil, **options)
     wiki = WikiPage.find_by(title: title)
-    text = format_text(wiki&.body)
+    text = wiki&.dtext_body&.format_text
     tag.div(text, class: "prose #{classes}".strip, **options)
   end
 
@@ -268,18 +262,12 @@ module ApplicationHelper
     CaptchaService.new.captcha_tag(...)
   end
 
-  def dtext_preview_button(preview_field)
-    tag.input value: "Preview", type: "button", class: "dtext-preview-button", "data-preview-field": preview_field
-  end
-
   def quick_search_form_for(attribute, url, name, autocomplete: nil, redirect: false, &block)
-    tag.li do
-      search_form_for(url, classes: "quick-search-form one-line-form") do |f|
-        out  = f.input attribute, label: false, placeholder: "Search #{name}", input_html: { id: nil, "data-autocomplete": autocomplete }
-        out += tag.input type: :hidden, name: :redirect, value: redirect
-        out += capture { yield f } if block_given?
-        out
-      end
+    search_form_for(url, classes: "quick-search-form one-line-form py-1.5 px-3 md:w-180px w-full") do |f|
+      out  = f.input attribute, label: false, placeholder: "Search #{name}", input_html: { id: nil, "data-autocomplete": autocomplete }
+      out += tag.input type: :hidden, name: :redirect, value: redirect
+      out += capture { yield f } if block_given?
+      out
     end
   end
 
@@ -447,44 +435,5 @@ module ApplicationHelper
 
   def atom_feed_tag(title, url = {})
     content_for(:html_header, auto_discovery_link_tag(:atom, url, title: title))
-  end
-
-  protected
-
-  def nav_link_match(controller, url)
-    url =~ case controller
-    when "sessions", "users", "admin/users"
-      %r{^/(session|users)}
-
-    when "comments"
-      %r{^/comments}
-
-    when "notes", "note_versions"
-      %r{^/notes}
-
-    when "posts", "uploads", "post_versions", "explore/posts", "moderator/post/dashboards", "favorites"
-      %r{^/post}
-
-    when "artists", "artist_versions"
-      %r{^/artist}
-
-    when "tags", "tag_aliases", "tag_implications"
-      %r{^/tags}
-
-    when "pools", "pool_versions"
-      %r{^/pools}
-
-    when "moderator/dashboards"
-      %r{^/moderator}
-
-    when "wiki_pages", "wiki_page_versions"
-      %r{^/wiki_pages}
-
-    when "forum_topics", "forum_posts"
-      %r{^/forum_topics}
-
-    else
-      %r{^/static}
-    end
   end
 end

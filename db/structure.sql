@@ -835,7 +835,8 @@ CREATE TABLE public.good_job_batches (
     callback_priority integer,
     enqueued_at timestamp(6) without time zone,
     discarded_at timestamp(6) without time zone,
-    finished_at timestamp(6) without time zone
+    finished_at timestamp(6) without time zone,
+    jobs_finished_at timestamp(6) without time zone
 );
 
 
@@ -854,7 +855,10 @@ CREATE TABLE public.good_job_executions (
     scheduled_at timestamp(6) without time zone,
     finished_at timestamp(6) without time zone,
     error text,
-    error_event smallint
+    error_event smallint,
+    error_backtrace text[],
+    process_id uuid,
+    duration interval
 );
 
 
@@ -866,7 +870,8 @@ CREATE TABLE public.good_job_processes (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    state jsonb
+    state jsonb,
+    lock_type smallint
 );
 
 
@@ -909,7 +914,9 @@ CREATE TABLE public.good_jobs (
     executions_count integer,
     job_class text,
     error_event smallint,
-    labels text[]
+    labels text[],
+    locked_by_id uuid,
+    locked_at timestamp(6) without time zone
 );
 ALTER TABLE ONLY public.good_jobs ALTER COLUMN finished_at SET STATISTICS 1000;
 
@@ -993,6 +1000,41 @@ CREATE SEQUENCE public.ip_geolocations_id_seq
 --
 
 ALTER SEQUENCE public.ip_geolocations_id_seq OWNED BY public.ip_geolocations.id;
+
+
+--
+-- Name: login_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.login_sessions (
+    id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    user_id bigint NOT NULL,
+    login_id uuid NOT NULL,
+    session_id uuid NOT NULL,
+    status integer NOT NULL,
+    last_seen_at timestamp(6) without time zone
+);
+
+
+--
+-- Name: login_sessions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.login_sessions_id_seq
+    START WITH 10000000
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: login_sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.login_sessions_id_seq OWNED BY public.login_sessions.id;
 
 
 --
@@ -1148,7 +1190,9 @@ CREATE TABLE public.news_updates (
     creator_id integer NOT NULL,
     updater_id integer NOT NULL,
     created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
+    updated_at timestamp without time zone NOT NULL,
+    is_deleted boolean DEFAULT false NOT NULL,
+    duration interval DEFAULT '14 days'::interval NOT NULL
 );
 
 
@@ -1257,22 +1301,23 @@ ALTER SEQUENCE public.notes_id_seq OWNED BY public.notes.id;
 --
 
 CREATE TABLE public.pool_versions (
-    id bigint NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
-    pool_id bigint NOT NULL,
-    updater_id bigint NOT NULL,
+    id integer NOT NULL,
+    created_at timestamp(6) without time zone,
+    updated_at timestamp(6) without time zone,
+    pool_id integer NOT NULL,
+    updater_id integer,
     version integer DEFAULT 1 NOT NULL,
-    name text NOT NULL,
-    description text DEFAULT ''::text NOT NULL,
-    category character varying NOT NULL,
+    name text,
+    description text,
+    category character varying,
     is_active boolean DEFAULT true NOT NULL,
     is_deleted boolean DEFAULT false NOT NULL,
     description_changed boolean DEFAULT false NOT NULL,
     name_changed boolean DEFAULT false NOT NULL,
     post_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
     added_post_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
-    removed_post_ids integer[] DEFAULT '{}'::integer[] NOT NULL
+    removed_post_ids integer[] DEFAULT '{}'::integer[] NOT NULL,
+    "boolean" boolean DEFAULT false NOT NULL
 );
 
 
@@ -1623,19 +1668,18 @@ ALTER SEQUENCE public.post_replacements_id_seq OWNED BY public.post_replacements
 --
 
 CREATE TABLE public.post_versions (
-    id bigint NOT NULL,
-    created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL,
-    post_id bigint NOT NULL,
-    updater_id bigint NOT NULL,
+    id integer NOT NULL,
+    updated_at timestamp without time zone NOT NULL,
+    post_id integer NOT NULL,
+    updater_id integer,
     version integer DEFAULT 1 NOT NULL,
     parent_changed boolean DEFAULT false NOT NULL,
     rating_changed boolean DEFAULT false NOT NULL,
     source_changed boolean DEFAULT false NOT NULL,
     parent_id integer,
-    rating character varying(1) NOT NULL,
-    source text DEFAULT ''::text NOT NULL,
-    tags text DEFAULT ''::text NOT NULL,
+    rating character varying(1),
+    source text,
+    tags text NOT NULL,
     added_tags text[] DEFAULT '{}'::text[] NOT NULL,
     removed_tags text[] DEFAULT '{}'::text[] NOT NULL
 );
@@ -1826,6 +1870,47 @@ ALTER SEQUENCE public.saved_searches_id_seq OWNED BY public.saved_searches.id;
 CREATE TABLE public.schema_migrations (
     version character varying NOT NULL
 );
+
+
+--
+-- Name: site_credentials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.site_credentials (
+    id bigint NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    site integer NOT NULL,
+    creator_id bigint NOT NULL,
+    is_enabled boolean DEFAULT true NOT NULL,
+    is_public boolean DEFAULT true NOT NULL,
+    status integer DEFAULT 0 NOT NULL,
+    usage_count integer DEFAULT 0 NOT NULL,
+    error_count integer DEFAULT 0 NOT NULL,
+    last_used_at timestamp(6) without time zone,
+    last_error_at timestamp(6) without time zone,
+    credential jsonb DEFAULT '{}'::jsonb NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL
+);
+
+
+--
+-- Name: site_credentials_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.site_credentials_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: site_credentials_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.site_credentials_id_seq OWNED BY public.site_credentials.id;
 
 
 --
@@ -2096,12 +2181,13 @@ CREATE TABLE public.user_events (
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
     user_id integer NOT NULL,
-    user_session_id integer NOT NULL,
+    user_session_id integer,
     category integer NOT NULL,
     ip_addr inet,
     session_id uuid,
     user_agent character varying,
-    metadata jsonb
+    metadata jsonb,
+    login_session_id uuid
 );
 
 
@@ -2784,6 +2870,13 @@ ALTER TABLE ONLY public.ip_geolocations ALTER COLUMN id SET DEFAULT nextval('pub
 
 
 --
+-- Name: login_sessions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.login_sessions ALTER COLUMN id SET DEFAULT nextval('public.login_sessions_id_seq'::regclass);
+
+
+--
 -- Name: media_assets id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2921,6 +3014,13 @@ ALTER TABLE ONLY public.reactions ALTER COLUMN id SET DEFAULT nextval('public.re
 --
 
 ALTER TABLE ONLY public.saved_searches ALTER COLUMN id SET DEFAULT nextval('public.saved_searches_id_seq'::regclass);
+
+
+--
+-- Name: site_credentials id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.site_credentials ALTER COLUMN id SET DEFAULT nextval('public.site_credentials_id_seq'::regclass);
 
 
 --
@@ -3244,6 +3344,15 @@ ALTER TABLE ONLY public.ip_geolocations
     ADD CONSTRAINT ip_geolocations_pkey PRIMARY KEY (id);
 
 
+
+--
+-- Name: login_sessions login_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.login_sessions
+    ADD CONSTRAINT login_sessions_pkey PRIMARY KEY (id);
+
+
 --
 -- Name: media_assets media_assets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
@@ -3410,6 +3519,14 @@ ALTER TABLE ONLY public.saved_searches
 
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
+
+
+--
+-- Name: site_credentials site_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.site_credentials
+    ADD CONSTRAINT site_credentials_pkey PRIMARY KEY (id);
 
 
 --
@@ -4338,6 +4455,13 @@ CREATE INDEX index_good_job_executions_on_active_job_id_and_created_at ON public
 
 
 --
+-- Name: index_good_job_executions_on_process_id_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_good_job_executions_on_process_id_and_created_at ON public.good_job_executions USING btree (process_id, created_at);
+
+
+--
 -- Name: index_good_job_jobs_for_candidate_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4387,6 +4511,13 @@ CREATE INDEX index_good_jobs_on_batch_id ON public.good_jobs USING btree (batch_
 
 
 --
+-- Name: index_good_jobs_on_concurrency_key_and_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_good_jobs_on_concurrency_key_and_created_at ON public.good_jobs USING btree (concurrency_key, created_at);
+
+
+--
 -- Name: index_good_jobs_on_concurrency_key_when_unfinished; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4412,6 +4543,20 @@ CREATE UNIQUE INDEX index_good_jobs_on_cron_key_and_cron_at_cond ON public.good_
 --
 
 CREATE INDEX index_good_jobs_on_labels ON public.good_jobs USING gin (labels) WHERE (labels IS NOT NULL);
+
+
+--
+-- Name: index_good_jobs_on_locked_by_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_good_jobs_on_locked_by_id ON public.good_jobs USING btree (locked_by_id) WHERE (locked_by_id IS NOT NULL);
+
+
+--
+-- Name: index_good_jobs_on_priority_scheduled_at_unfinished_unlocked; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_good_jobs_on_priority_scheduled_at_unfinished_unlocked ON public.good_jobs USING btree (priority, scheduled_at) WHERE ((finished_at IS NULL) AND (locked_by_id IS NULL));
 
 
 --
@@ -4552,6 +4697,55 @@ CREATE INDEX index_ip_geolocations_on_time_zone ON public.ip_geolocations USING 
 --
 
 CREATE INDEX index_ip_geolocations_on_updated_at ON public.ip_geolocations USING btree (updated_at);
+
+
+--
+-- Name: index_login_sessions_on_created_at_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_login_sessions_on_created_at_and_id ON public.login_sessions USING btree (created_at, id);
+
+
+--
+-- Name: index_login_sessions_on_last_seen_at_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_login_sessions_on_last_seen_at_and_id ON public.login_sessions USING btree (last_seen_at, id);
+
+
+--
+-- Name: index_login_sessions_on_login_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_login_sessions_on_login_id ON public.login_sessions USING btree (login_id);
+
+
+--
+-- Name: index_login_sessions_on_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_login_sessions_on_session_id ON public.login_sessions USING btree (session_id);
+
+
+--
+-- Name: index_login_sessions_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_login_sessions_on_status ON public.login_sessions USING btree (status);
+
+
+--
+-- Name: index_login_sessions_on_updated_at_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_login_sessions_on_updated_at_and_id ON public.login_sessions USING btree (updated_at, id);
+
+
+--
+-- Name: index_login_sessions_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_login_sessions_on_user_id ON public.login_sessions USING btree (user_id);
 
 
 --
@@ -5122,13 +5316,6 @@ CREATE INDEX index_post_versions_on_added_tags ON public.post_versions USING btr
 
 
 --
--- Name: index_post_versions_on_created_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX index_post_versions_on_created_at ON public.post_versions USING btree (created_at);
-
-
---
 -- Name: index_post_versions_on_parent_changed; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5182,6 +5369,13 @@ CREATE INDEX index_post_versions_on_updater_id ON public.post_versions USING btr
 --
 
 CREATE INDEX index_post_versions_on_version ON public.post_versions USING btree (version);
+
+
+--
+-- Name: index_post_versons_on_updater_id_and_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_post_versons_on_updater_id_and_id ON public.post_versions USING btree (updater_id, id);
 
 
 --
@@ -5407,6 +5601,83 @@ CREATE INDEX index_sent_dmails_on_created_at ON public.dmails USING btree (creat
 --
 
 CREATE INDEX index_sent_dmails_on_owner_id_and_created_at ON public.dmails USING btree (owner_id, created_at) WHERE (owner_id = from_id);
+
+
+--
+-- Name: index_site_credentials_on_creator_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_creator_id ON public.site_credentials USING btree (creator_id);
+
+
+--
+-- Name: index_site_credentials_on_credential; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_credential ON public.site_credentials USING gin (credential);
+
+
+--
+-- Name: index_site_credentials_on_error_count; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_error_count ON public.site_credentials USING btree (error_count);
+
+
+--
+-- Name: index_site_credentials_on_is_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_is_enabled ON public.site_credentials USING btree (is_enabled);
+
+
+--
+-- Name: index_site_credentials_on_is_public; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_is_public ON public.site_credentials USING btree (is_public);
+
+
+--
+-- Name: index_site_credentials_on_last_error_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_last_error_at ON public.site_credentials USING btree (last_error_at);
+
+
+--
+-- Name: index_site_credentials_on_last_used_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_last_used_at ON public.site_credentials USING btree (last_used_at);
+
+
+--
+-- Name: index_site_credentials_on_metadata; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_metadata ON public.site_credentials USING gin (metadata);
+
+
+--
+-- Name: index_site_credentials_on_site; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_site ON public.site_credentials USING btree (site);
+
+
+--
+-- Name: index_site_credentials_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_status ON public.site_credentials USING btree (status);
+
+
+--
+-- Name: index_site_credentials_on_usage_count; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_site_credentials_on_usage_count ON public.site_credentials USING btree (usage_count);
 
 
 --
@@ -5743,6 +6014,24 @@ CREATE INDEX index_user_events_on_created_at ON public.user_events USING btree (
 --
 
 CREATE INDEX index_user_events_on_ip_addr ON public.user_events USING btree (ip_addr);
+
+
+--
+-- Name: index_user_events_on_ip_addr_subnet; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_user_events_on_ip_addr_subnet ON public.user_events USING btree (network(set_masklen(ip_addr,
+CASE
+    WHEN (family(ip_addr) = 4) THEN 24
+    ELSE 64
+END)));
+
+
+--
+-- Name: index_user_events_on_login_session_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_user_events_on_login_session_id ON public.user_events USING btree (login_session_id);
 
 
 --
@@ -6250,6 +6539,14 @@ ALTER TABLE ONLY public.api_keys
 
 
 --
+-- Name: site_credentials fk_rails_32d18ae384; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.site_credentials
+    ADD CONSTRAINT fk_rails_32d18ae384 FOREIGN KEY (creator_id) REFERENCES public.users(id);
+
+
+--
 -- Name: tag_versions fk_rails_373a0aa141; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6530,6 +6827,22 @@ ALTER TABLE ONLY public.bulk_update_requests
 
 
 --
+-- Name: user_events fk_rails_89475bdf6f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_events
+    ADD CONSTRAINT fk_rails_89475bdf6f FOREIGN KEY (login_session_id) REFERENCES public.login_sessions(login_id);
+
+
+--
+-- Name: login_sessions fk_rails_8c949dd2cd; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.login_sessions
+    ADD CONSTRAINT fk_rails_8c949dd2cd FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: tag_aliases fk_rails_90fd158a45; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6800,6 +7113,23 @@ ALTER TABLE ONLY public.user_upgrades
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20250720155738'),
+('20250718142035'),
+('20250716202530'),
+('20250716150524'),
+('20250603085358'),
+('20250601164359'),
+('20250601164357'),
+('20250601164355'),
+('20250530193107'),
+('20250530193106'),
+('20250530091115'),
+('20250507024608'),
+('20241023091114'),
+('20241022174253'),
+('20240607200251'),
+('20240607200250'),
+('20240607200249'),
 ('20240221060848'),
 ('20240217201829'),
 ('20240131055326'),

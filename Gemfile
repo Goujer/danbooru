@@ -1,10 +1,10 @@
 source 'https://rubygems.org/'
 
-ruby "~> 3.2.3"
+ruby "~> 3.4.5"
 
 gem 'dotenv-rails', require: "dotenv/load"
 
-gem "rails", "~> 7.1"
+gem "rails", "~> 8.0"
 gem "pg"
 gem "simple_form"
 gem "sanitize"
@@ -14,7 +14,8 @@ gem 'bcrypt', :require => "bcrypt"
 gem 'stripe'
 gem 'aws-sdk-sqs', '~> 1'
 gem 'responders'
-gem 'dtext_rb', git: "https://github.com/danbooru/dtext_rb.git", require: "dtext"
+gem 'dtext_rb', require: "dtext"
+# gem 'dtext_rb', path: "lib/dtext_rb", require: "dtext"
 gem 'memoist'
 gem 'daemons'
 gem 'oauth2'
@@ -31,7 +32,6 @@ gem 'puma'
 gem 'scenic'
 gem 'ipaddress_2'
 gem 'http'
-gem 'activerecord-hierarchical_query'
 gem 'pundit'
 gem 'mail'
 gem 'nokogiri'
@@ -64,6 +64,11 @@ gem "bcrypt_pbkdf"
 gem "connection_pool"
 gem "rotp"
 gem "rqrcode"
+gem "kramdown"
+gem "abbrev"
+gem "rubyzip", require: "zip"
+gem "webrick"
+gem "useragent"
 
 group :development do
   gem 'rubocop', require: false
@@ -77,8 +82,8 @@ group :development do
   gem 'binding_of_caller'
   gem 'benchmark-ips', require: "benchmark/ips"
   gem 'listen'
-  gem 'solargraph'
   gem 'derailed_benchmarks'
+  gem 'ruby-lsp-shoulda-context', require: false
 end
 
 group :test do

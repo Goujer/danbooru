@@ -10,7 +10,7 @@
 <% content_for(:sidebar) do %>
   <%= render "posts/partials/common/search", :path => posts_path, :tags => params[:q], :tags_dom_id => "tags" %>
 
-  <%= render "posts/partials/index/blacklist" %>
+  <%= render BlacklistComponent.new(user: CurrentUser.user) %>
 
   <section id="tag-list">
     <%= render_categorized_tag_list(@post, current_query: params[:q]) %>
@@ -295,11 +295,11 @@
     <div class="fav-buttons-container">
       <%= content_tag(:div, class: "mb-2 fav-buttons fav-buttons-#{@post.favorited_by?(CurrentUser.user)}") do %>
         <%= form_tag(favorites_path(post_id: @post.id), method: "post", id: "add-fav-button", "data-remote": true) do %>
-          <%= button_tag empty_heart_icon, class: "ui-button ui-widget ui-corner-all", "data-disable-with": spinner_icon %>
+          <%= button_tag empty_heart_icon, class: "text-lg py-1 px-3", "data-disable-with": spinner_icon %>
         <% end %>
 
         <%= form_tag(favorite_path(@post.id), method: "delete", id: "remove-fav-button", "data-remote": true) do %>
-          <%= button_tag solid_heart_icon, class: "ui-button ui-widget ui-corner-all", "data-disable-with": spinner_icon %>
+          <%= button_tag solid_heart_icon, class: "text-lg py-1 px-3", "data-disable-with": spinner_icon %>
         <% end %>
       <% end %>
     </div>
@@ -308,12 +308,8 @@
   <section id="mark-as-translated-section">
     <%= edit_form_for(@post, url: mark_as_translated_post_path(@post), method: :put) do |f| %>
       <%= f.input :q, as: :hidden, input_html: { id: nil, name: "q", value: params[:q] } %>
-
-      <fieldset class="inline-fieldset">
-        <%= f.input :check_translation, as: :boolean, input_html: { checked: @post.has_tag?("check_translation") } %>
-        <%= f.input :partially_translated, as: :boolean, input_html: { checked: @post.has_tag?("partially_translated") } %>
-      </fieldset>
-
+      <%= f.input :check_translation, as: :boolean, wrapper: "inline-toggle-switch", input_html: { checked: @post.has_tag?("check_translation") } %>
+      <%= f.input :partially_translated, as: :boolean, wrapper: "inline-toggle-switch", input_html: { checked: @post.has_tag?("partially_translated") } %>
       <%= f.submit "Mark as translated" %>
     <% end %>
   </section>

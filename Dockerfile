@@ -16,14 +16,17 @@
 #
 # See https://github.com/danbooru/danbooru/wiki/Docker-Guide for more details.
 
-ARG MOZJPEG_URL="https://github.com/mozilla/mozjpeg/archive/refs/tags/v4.1.5.tar.gz"
-ARG VIPS_URL="https://github.com/libvips/libvips/releases/download/v8.14.2/vips-8.14.2.tar.xz"
-ARG FFMPEG_URL="https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n7.1.1.tar.gz"
-ARG EXIFTOOL_URL="https://github.com/exiftool/exiftool/archive/refs/tags/13.30.tar.gz"
-ARG OPENRESTY_URL="https://openresty.org/download/openresty-1.25.3.1.tar.gz"
-ARG RUBY_URL="https://cache.ruby-lang.org/pub/ruby/3.2/ruby-3.2.3.tar.gz"
-ARG RUBY_MINOR_VERSION="3.2.0"
-ARG NODE_VERSION="20.x"
+# You must also update .ruby-version and the Gemfile when updating the Ruby version.
+ARG RUBY_VERSION="3.4.5"
+ARG RUBY_MAJOR_VERSION="3.4"
+
+# Update .tool-versions too when updating these.
+ARG MOZJPEG_VERSION="4.1.5"
+ARG VIPS_VERSION="8.14.2"
+ARG FFMPEG_VERSION="7.1.1"
+ARG EXIFTOOL_VERSION="13.30"
+ARG OPENRESTY_VERSION="1.27.1.2"
+ARG NODE_VERSION="22.16.0"
 ARG UBUNTU_VERSION="24.04"
 
 
@@ -31,11 +34,11 @@ ARG UBUNTU_VERSION="24.04"
 FROM ubuntu:$UBUNTU_VERSION AS base
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-O", "globstar", "-O", "dotglob", "-c"]
 
-ARG RUBY_MINOR_VERSION
+ARG RUBY_MAJOR_VERSION
 ENV DEBIAN_FRONTEND="noninteractive"
 ENV LANG=C.UTF-8
 ENV GEM_HOME=/home/danbooru/bundle
-ENV GEM_PATH=/home/danbooru/bundle/ruby/$RUBY_MINOR_VERSION:/usr/local/lib/ruby/gems/$RUBY_MINOR_VERSION
+ENV GEM_PATH=/home/danbooru/bundle/ruby/${RUBY_MAJOR_VERSION}.0:/usr/local/lib/ruby/gems/${RUBY_MAJOR_VERSION}.0
 ENV PATH=$GEM_HOME/bin:$PATH
 
 RUN <<EOS
@@ -79,11 +82,12 @@ EOS
 
 # Build Ruby. Output is in /usr/local.
 FROM build-base AS build-ruby
+ARG RUBY_VERSION
+ARG RUBY_MAJOR_VERSION
 ARG RUBY_BUILD_DEPS="rustc libssl-dev libgmp-dev libyaml-dev libffi-dev libreadline-dev zlib1g-dev"
-ARG RUBY_URL
 RUN <<EOS
   apt-get install -y --no-install-recommends $RUBY_BUILD_DEPS
-  curl -L $RUBY_URL | tar --strip-components=1 -xzvf -
+  curl -L "https://cache.ruby-lang.org/pub/ruby/${RUBY_MAJOR_VERSION}/ruby-${RUBY_VERSION}.tar.gz" | tar --strip-components=1 -xzvf -
 
   ./configure --enable-yjit --enable-shared --disable-install-doc
   make -j install
@@ -98,11 +102,11 @@ EOS
 
 # Build MozJPEG. Output is in /usr/local.
 FROM build-base AS build-mozjpeg
+ARG MOZJPEG_VERSION
 ARG MOZJPEG_BUILD_DEPS="cmake nasm libpng-dev zlib1g-dev"
-ARG MOZJPEG_URL
 RUN <<EOS
   apt-get install -y --no-install-recommends $MOZJPEG_BUILD_DEPS
-  curl -L $MOZJPEG_URL | tar --strip-components=1 -xzvf -
+  curl -L "https://github.com/mozilla/mozjpeg/archive/refs/tags/v${MOZJPEG_VERSION}.tar.gz" | tar --strip-components=1 -xzvf -
 
   cmake -DCMAKE_INSTALL_PREFIX=/usr/local -DENABLE_STATIC=0 -DWITH_ARITH_ENC=1 -DWITH_ARITH_DEC=1 .
   make -j install/strip
@@ -116,11 +120,11 @@ EOS
 
 # Build libvips. Output is in /usr/local.
 FROM build-mozjpeg AS build-vips
+ARG VIPS_VERSION
 ARG VIPS_BUILD_DEPS="meson libgirepository1.0-dev libfftw3-dev libwebp-dev liborc-dev liblcms2-dev libpng-dev libexpat1-dev libglib2.0-dev libgif-dev libexif-dev libheif-dev"
-ARG VIPS_URL
 RUN <<EOS
   apt-get install -y --no-install-recommends $VIPS_BUILD_DEPS
-  curl -L $VIPS_URL | tar --strip-components=1 -xJvf -
+  curl -L "https://github.com/libvips/libvips/releases/download/v${VIPS_VERSION}/vips-${VIPS_VERSION}.tar.xz" | tar --strip-components=1 -xJvf -
 
   meson build --prefix /usr/local --buildtype release --strip -Dcplusplus=false
   meson compile -C build
@@ -136,7 +140,7 @@ EOS
 
 # Build FFmpeg. Output is in /usr/local.
 FROM build-base AS build-ffmpeg
-ARG FFMPEG_URL
+ARG FFMPEG_VERSION
 ARG FFMPEG_BUILD_DEPS="nasm libvpx-dev libdav1d-dev zlib1g-dev"
 ARG FFMPEG_BUILD_OPTIONS="\
   --disable-ffplay --disable-network --disable-doc --disable-static --enable-shared \
@@ -164,7 +168,7 @@ ARG FFMPEG_BUILD_OPTIONS="\
 
 RUN <<EOS
   apt-get install -y --no-install-recommends $FFMPEG_BUILD_DEPS
-  curl -L $FFMPEG_URL | tar --strip-components=1 -xzvf -
+  curl -L "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n${FFMPEG_VERSION}.tar.gz" | tar --strip-components=1 -xzvf -
 
   ./configure $FFMPEG_BUILD_OPTIONS
   make -j install
@@ -180,11 +184,11 @@ EOS
 
 # Build ExifTool. Output is in /usr/local.
 FROM build-base AS build-exiftool
+ARG EXIFTOOL_VERSION
 ARG EXIFTOOL_BUILD_DEPS="perl perl-modules-5.38 libarchive-zip-perl"
-ARG EXIFTOOL_URL
 RUN <<EOS
   apt-get install -y --no-install-recommends $EXIFTOOL_BUILD_DEPS
-  curl -L $EXIFTOOL_URL | tar --strip-components=1 -xzvf -
+  curl -L "https://github.com/exiftool/exiftool/archive/refs/tags/${EXIFTOOL_VERSION}.tar.gz" | tar --strip-components=1 -xzvf -
 
   perl Makefile.PL
   make -j install
@@ -201,7 +205,7 @@ EOS
 
 # Build OpenResty. Output is in /usr/local.
 FROM build-base AS build-openresty
-ARG OPENRESTY_URL
+ARG OPENRESTY_VERSION
 ARG OPENRESTY_BUILD_DEPS="libssl-dev libpcre3-dev zlib1g-dev"
 ARG OPENRESTY_BUILD_OPTIONS="\
  --with-threads --with-compat --with-pcre-jit --with-file-aio \
@@ -212,7 +216,7 @@ ARG OPENRESTY_BUILD_OPTIONS="\
 
 RUN <<EOS
   apt-get install -y --no-install-recommends $OPENRESTY_BUILD_DEPS
-  curl -L $OPENRESTY_URL | tar --strip-components=1 -xzvf -
+  curl -L "https://openresty.org/download/openresty-${OPENRESTY_VERSION}.tar.gz" | tar --strip-components=1 -xzvf -
 
   ./configure -j$(nproc) --prefix=/usr/local $OPENRESTY_BUILD_OPTIONS
   make -j install
@@ -229,21 +233,17 @@ EOS
 FROM build-base AS build-node
 ARG NODE_VERSION
 RUN <<EOS
-  apt-get install -y --no-install-recommends gpg python3
-  rm -rf /usr/local/*
+  apt-get install -y --no-install-recommends xz-utils
 
-  curl https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor > /usr/share/keyrings/nodesource.gpg
-  echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_VERSION nodistro main" > /etc/apt/sources.list.d/nodesource.list
+  curl -L https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz | tar --strip-components=1 -xJvf -
 
-  apt-get update
-  apt-get download nodejs
-  dpkg --instdir=/build --force-all --install ./nodejs*.deb
-  mv -i usr/bin usr/lib /usr/local
-
+  cp -rdv ./bin /usr/local
+  cp -rdv ./lib /usr/local
   find /usr/local -type f -executable -exec strip --strip-unneeded {} \;
-  rm -rf *
+  rm -rf ./*
 
   node --version
+  npm --version
 EOS
 
 
@@ -252,7 +252,15 @@ EOS
 FROM build-ruby AS build-gems
 WORKDIR /danbooru
 
-RUN apt-get install -y --no-install-recommends libpq-dev libglib2.0-dev
+RUN apt-get install -y --no-install-recommends libpq-dev ragel=6.10-4
+
+COPY --chown=danbooru:danbooru lib/dtext_rb/ lib/dtext_rb/
+USER danbooru
+
+RUN <<EOS
+  cd lib/dtext_rb
+  bin/install
+EOS
 
 COPY --link Gemfile Gemfile.lock ./
 RUN chown danbooru:danbooru /danbooru
@@ -370,13 +378,13 @@ ENV DOCKER_IMAGE_BUILD_DATE=$DOCKER_IMAGE_BUILD_DATE
 
 
 
-# The development layer. Contains the production layer, plus enables passwordless sudo and includes nodejs
-# and node_modules so that JS/CSS files can be rebuilt.
+# The development layer. Contains the production layer, plus enables passwordless sudo, includes nodejs and node_modules
+# for building JS/CSS files, and includes tools and libraries needed for building certain Ruby gems.
 FROM danbooru-base AS development
 
 RUN <<EOS
   apt-get update
-  apt-get install -y --no-install-recommends g++ make git sudo gpg socat
+  apt-get install -y --no-install-recommends g++ make ragel=6.10-4 git sudo gpg socat libyaml-dev libpq-dev
 
   groupadd admin -U danbooru
   passwd -d danbooru
@@ -395,5 +403,25 @@ ARG DOCKER_IMAGE_REVISION=""
 ARG DOCKER_IMAGE_BUILD_DATE=""
 ENV DOCKER_IMAGE_REVISION=$DOCKER_IMAGE_REVISION
 ENV DOCKER_IMAGE_BUILD_DATE=$DOCKER_IMAGE_BUILD_DATE
+
+ARG RUBY_VERSION
+ARG RUBY_MAJOR_VERSION
+ARG MOZJPEG_VERSION
+ARG VIPS_VERSION
+ARG FFMPEG_VERSION
+ARG EXIFTOOL_VERSION
+ARG OPENRESTY_VERSION
+ARG NODE_VERSION
+ARG UBUNTU_VERSION
+
+ENV RUBY_VERSION=$RUBY_VERSION
+ENV RUBY_MAJOR_VERSION=$RUBY_MAJOR_VERSION
+ENV MOZJPEG_VERSION=$MOZJPEG_VERSION
+ENV VIPS_VERSION=$VIPS_VERSION
+ENV FFMPEG_VERSION=$FFMPEG_VERSION
+ENV EXIFTOOL_VERSION=$EXIFTOOL_VERSION
+ENV OPENRESTY_VERSION=$OPENRESTY_VERSION
+ENV NODE_VERSION=$NODE_VERSION
+ENV UBUNTU_VERSION=$UBUNTU_VERSION
 
 USER danbooru

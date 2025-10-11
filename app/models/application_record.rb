@@ -5,7 +5,7 @@ class ApplicationRecord < ActiveRecord::Base
 
   include Deletable
   include Mentionable
-  include Normalizable
+  include DTextAttribute
   include ArrayAttribute
   include HasDtextLinks
   extend HasBitFlags
@@ -94,8 +94,9 @@ class ApplicationRecord < ActiveRecord::Base
       policy.html_data_attributes
     end
 
-    def serializable_hash(options = {})
-      options ||= {}
+    def serializable_hash(opts = {})
+      options = opts.dup || {}
+
       if options[:only].is_a?(String)
         options.delete(:methods)
         options.delete(:include)
@@ -183,6 +184,13 @@ class ApplicationRecord < ActiveRecord::Base
 
           dupes.each(&:destroy!)
         end
+      end
+    end
+
+    # Like `update`, but locks the record before updating it.
+    def locked_update(**args)
+      with_lock do
+        update(**args)
       end
     end
 

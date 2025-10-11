@@ -6,7 +6,7 @@
 # https://fantia.jp/profiles/tus_2n9n0fm05fizg
 
 class Source::URL::Fantia < Source::URL
-  attr_reader :full_image_url, :candidate_full_image_urls, :fanclub_id, :username, :post_id, :product_id
+  attr_reader :full_image_url, :candidate_full_image_urls, :download_url, :fanclub_id, :username, :post_id, :product_id
 
   def self.match?(url)
     url.domain == "fantia.jp"
@@ -31,9 +31,10 @@ class Source::URL::Fantia < Source::URL
     # https://fantia.jp/posts/2533616/album_image?query=YsSkcpdnlam4JOy5dGHafbrSgfCZoMUmfrWD1XEouNkfO9Qk%2BC5Arv7ovxaiIo%2FEeJe5TI9mWDodDBp%2BzIIh70HJ6c0sWH8wMCc%2FM6IhDIKpxE%2BM1Zc1--Ol9M7yLd5TswwnZ5--wZ7u4P1tCVaAoL5ymFfA5Q%3D%3D
     # https://cc.fantia.jp/uploads/album_image/file/326995/00abd740-74d5-4289-be85-782cb8cdd382.png?Key-Pair-Id=APKAIOCKYZS7WKBB6G7A&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jYy5mYW50aWEuanAvdXBsb2Fkcy9hbGJ1bV9pbWFnZS9maWxlLzMyNjk5NS8wMGFiZDc0MC03NGQ1LTQyODktYmU4NS03ODJjYjhjZGQzODIucG5nIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzEzMjM2OTYxfX19XX0_&Signature=XSpRUwWyKOpR53aImaRQeBQx1R4e8hShO6cm-bmqXtJVchiigbTKsV-kCBMox1aeISAcN-O8VhujVlYwtOV1pw6WmE8kIrKeMnWteA17lYd6wAW2BUcVlQb6TBdpPA38V0UTRlmM0cypgw1ipmmDTKtjQ8-Tmo368bZqi4w4M6EukgK~L8Ss42K0JBwfiv0VuLTw49hK9-jGjA1gyQdzZXZwXkuClelV7VVHWxTX06yT8Anv6giOyOM1IP35LxfYG9ZhbTkN78TqAviZhQ9aLEceYG8Ua65f0bGMWCSnjeox5-UpiQ4irAlLDAVkKT~Lz5otNzQd2UnFkRiqbRB32A__
     # https://cc.fantia.jp/uploads/album_image/file/326995/main_00abd740-74d5-4289-be85-782cb8cdd382.png?Key-Pair-Id=APKAIOCKYZS7WKBB6G7A&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9jYy5mYW50aWEuanAvdXBsb2Fkcy9hbGJ1bV9pbWFnZS9maWxlLzMyNjk5NS9tYWluXzAwYWJkNzQwLTc0ZDUtNDI4OS1iZTg1LTc4MmNiOGNkZDM4Mi5wbmciLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3MTMyMjAzODN9fX1dfQ__&Signature=Wmw~M4FjxgpDFYfQmtSE6bmIybdLbsby-SLCMcEPImK1ObbSeCq7GeOuOlwggxFTHU-O2juo-x8f8BCG~YKW1OGHBmHXpQJStw1f5juwHr7gtnM-GKmC3FIXCbWbmsMSpr~8frXOJX0AMHWKBN3aJAnZ01kXF5g9YrC8o31~hlHqDodh9zGNEGFlYkBisfh73Gn6f~Lvu4N8-tdfhedKnPkhy95sc2HTdbIlvfM7hq191BbeGWUwagKtrKIkTFJDWgaLinoZCMFqZDgQ4l8PmdK9UF6wi60iqSeWh~CEsHWinOprdAQVzrg~QDlSOLm2GiPnJjcwYO6D42DbFFmvxw__
-    in _, "uploads", image_type, ("file" | "image"), image_id, /(\w+_)?([\w-]+\.\w+)/
+    in _, "uploads", image_type, ("file" | "image"), image_id, /(?:(\w+)_)?([\w-]+\.\w+)/
       sample = $1
       file = $2
+      @image_sample = sample.present? && file.match?(/\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\.\w+\z/)
 
       #  post_id/product_id == image_id only for the first image in a post/product
       case image_type
@@ -55,15 +56,18 @@ class Source::URL::Fantia < Source::URL
       end
 
     # https://fantia.jp/posts/1143951/download/1830956
+    # https://www.fantia.jp/posts/1143951/download/1830956
     in _, "posts", post_id, "download", image_id
       @post_id = post_id
-      @download_id = image_id
-      @downloadable = true
+      @download_url = "https://fantia.jp/posts/#{post_id}/download/#{image_id}"
+      @image_sample = false
 
     # https://fantia.jp/posts/2533616/album_image?query=YsSkcpdnlam4JOy5dGHafbrSgfCZoMUmfrWD1XEouNkfO9Qk%2BC5Arv7ovxaiIo%2FEeJe5TI9mWDodDBp%2BzIIh70HJ6c0sWH8wMCc%2FM6IhDIKpxE%2BM1Zc1--Ol9M7yLd5TswwnZ5--wZ7u4P1tCVaAoL5ymFfA5Q%3D%3D
+    # https://www.fantia.jp/posts/2533616/album_image?query=ohnfy48oGygFMkmdllgpHQQK61Mvm%2Bxy6%2FukgHOUMsbje%2BKMFaiKmLbP9hYDmeDNbJyiCbzSdN9cj3ovNY2T6N4LnRpH1%2Bpvk69f28QLG8T2zoVz%2BRNr--dGXRIUR3eSWXfSk1--IXeq0EUIc9%2Fmct%2BvbAbPqQ%3D%3D
     in _, "posts", post_id, "album_image" if params[:query].present?
       @post_id = post_id
-      @downloadable = true
+      @download_url = "https://fantia.jp/posts/#{post_id}/album_image?query=#{Danbooru::URL.escape(params[:query])}"
+      @image_sample = false
 
     # https://fantia.jp/posts/1148334
     # https://fantia.jp/posts/2245222/post_content_photo/14978435
@@ -91,11 +95,12 @@ class Source::URL::Fantia < Source::URL
   end
 
   def image_url?
-    path.starts_with?("/uploads/") || downloadable?
+    path.starts_with?("/uploads/") || download_url.present?
   end
 
-  def downloadable?
-    @downloadable == true
+  def image_sample?
+    return nil unless image_url?
+    @image_sample
   end
 
   def page_url

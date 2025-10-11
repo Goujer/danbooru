@@ -5,11 +5,7 @@ module Source
   class Extractor
     class Nijie < Source::Extractor
       def self.enabled?
-        Danbooru.config.nijie_login.present? && Danbooru.config.nijie_password.present?
-      end
-
-      def match?
-        Source::URL::Nijie === parsed_url
+        SiteCredential.for_site("Nijie").present?
       end
 
       def image_urls
@@ -49,7 +45,7 @@ module Source
         end
       end
 
-      def artist_name
+      def display_name
         artist_anchor&.text
       end
 
@@ -63,9 +59,9 @@ module Source
 
       def artist_commentary_desc
         if doujin?
-          page&.search("#dojin_text p:not(.title)")&.to_html
+          page&.css("#dojin_text p:not(.title)")&.to_html
         else
-          page&.search('#illust_text > p')&.to_html
+          page&.css("#illust_text > p")&.to_html
         end
       end
 
@@ -77,7 +73,7 @@ module Source
         end
 
         search_links.map do |node|
-          [node.inner_text, "https://nijie.info" + node.attr("href")]
+          [node.inner_text, "https://nijie.info#{node.attr("href")}"]
         end
       end
 
@@ -85,14 +81,10 @@ module Source
         "nijie_#{artist_id}" if artist_id.present?
       end
 
-      def other_names
-        [artist_name].compact
-      end
-
       def self.to_dtext(text)
         text = text.to_s.gsub(/\r\n|\r/, "<br>")
 
-        dtext = DText.from_html(text) do |element|
+        dtext = DText.from_html(text, base_url: "https://nijie.info") do |element|
           if element.name == "a" && element["href"]&.start_with?("/jump.php")
             element["href"] = element.text
           end
@@ -166,19 +158,21 @@ module Source
         login_page = http.get("https://nijie.info/login.php").parse
 
         form = {
-          email: Danbooru.config.nijie_login,
-          password: Danbooru.config.nijie_password,
+          email: credentials[:login],
+          password: credentials[:password],
           url: login_page.at("input[name='url']")&.fetch("value"),
           save: "on",
-          ticket: ""
+          ticket: "",
         }
 
         response = http.post("https://nijie.info/login_int.php", form: form)
 
         if response.status == 200
-          response.cookies.cookies.map { |cookie| [cookie.name, cookie.value] }.to_h
+          site_credential.success!
+          response.cookies.cookies.to_h { |cookie| [cookie.name, cookie.value] }
         else
           DanbooruLogger.info "Nijie login failed (#{url}, #{response.status})"
+          site_credential.error!(:invalid)
           nil
         end
       end

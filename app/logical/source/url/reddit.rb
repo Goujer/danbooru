@@ -3,7 +3,7 @@
 module Source
   class URL
     class Reddit < Source::URL
-      attr_reader :subreddit, :work_id, :share_id, :title, :username, :file
+      attr_reader :subreddit, :work_id, :comment_id, :share_id, :title, :username, :full_image_url
 
       def self.match?(url)
         url.domain.in?(%w[reddit.com redd.it redditmedia.com])
@@ -14,8 +14,14 @@ module Source
 
         # https://i.redd.it/p5utgk06ryq81.png
         # https://preview.redd.it/qoyhz3o8yde71.jpg?width=1440&format=pjpg&auto=webp&s=5cbe3b0b097d6e7263761c461dae19a43038db22
-        in ("i" | "preview"), "redd.it", file
-          @file = file
+        # https://preview.redd.it/thank-you-for-the-great-responses-to-my-seika-drawings-here-v0-tvapvd0fph0d1.png?width=2549&format=png&auto=webp&s=115a8f1c99df4a0ddb8c61f769a28548abe4ee17 (image in comment)
+        in ("i" | "preview"), "redd.it", _
+          @title, _, image_id = filename.rpartition("-")
+          @full_image_url = "https://i.redd.it/#{image_id}.#{file_ext}"
+
+        # https://www.reddit.com/media?url=https%3A%2F%2Fi.redd.it%2Fds05uzmtd6d61.jpg
+        in _, "reddit.com", "media" if params[:url].present?
+          @full_image_url = Source::URL.parse(params[:url]).try(:full_image_url)
 
         # https://www.reddit.com/media?url=https%3A%2F%2Fi.redd.it%2Fds05uzmtd6d61.jpg
         in _, "reddit.com", "media" if params[:url].present?
@@ -29,6 +35,11 @@ module Source
         # https://b.thumbs.redditmedia.com/1NSCseZgx3HZIHS0IYMJlAJ5QGcBul4O3TDAPh4f6is.jpg
         in *rest if image_url?
         # pass
+
+        # https://www.reddit.com/user/blank_page_drawings/comments/nfjz0d/
+        in _, "reddit.com", ("user" | "u"), username, "comments", work_id
+          @username = username
+          @work_id = work_id
 
         # https://www.reddit.com/user/blank_page_drawings/comments/nfjz0d/a_sleepy_orc/
         in _, "reddit.com", ("user" | "u"), username, "comments", work_id, title
@@ -46,6 +57,12 @@ module Source
           @subreddit = subreddit
           @share_id = share_id
 
+        # https://www.reddit.com/r/BocchiTheRock/comments/1cruel0/comment/l43980q/
+        in _, "reddit.com", "r", subreddit, "comments", work_id, "comment", comment_id
+          @subreddit = subreddit
+          @work_id = work_id
+          @comment_id = comment_id
+
         # https://www.reddit.com/r/arknights/comments/ttyccp/maria_nearl_versus_the_leftarmed_knight_dankestsin/
         # https://old.reddit.com/r/arknights/comments/ttyccp/maria_nearl_versus_the_leftarmed_knight_dankestsin/
         # https://i.reddit.com/r/arknights/comments/ttyccp/maria_nearl_versus_the_leftarmed_knight_dankestsin/
@@ -54,10 +71,22 @@ module Source
           @work_id = work_id
           @title = title
 
+        # https://old.reddit.com/r/Xenoblade_Chronicles/comments/11etwdd/monolith_soft_2023_brochure_art/jahip48/
+        in _, "reddit.com", "r", subreddit, "comments", work_id, title, comment_id
+          @subreddit = subreddit
+          @work_id = work_id
+          @title = title
+          @comment_id = comment_id
+
         # https://www.reddit.com/r/arknights/comments/ttyccp/
         in _, "reddit.com", "r", subreddit, "comments", work_id
           @subreddit = subreddit
           @work_id = work_id
+
+        # https://www.reddit.com/comments/1cruel0/comment/l43980q/
+        in _, "reddit.com", "comments", work_id, "comment", comment_id
+          @work_id = work_id
+          @comment_id = comment_id
 
         # https://www.reddit.com/comments/ttyccp
         # https://www.reddit.com/gallery/ttyccp
@@ -65,11 +94,15 @@ module Source
           @work_id = work_id
 
         # https://www.reddit.com/ttyccp
-        in _, "reddit.com" , work_id
+        in _, "reddit.com", work_id
+          @work_id = work_id
+
+        # https://www.redditmedia.com/mediaembed/wi4nfq
+        in _, "redditmedia.com", "mediaembed", work_id
           @work_id = work_id
 
         # https://redd.it/ttyccp
-        in nil, "redd.it" , work_id
+        in nil, "redd.it", work_id
           @work_id = work_id
 
         else
@@ -77,8 +110,16 @@ module Source
         end
       end
 
+      def extractor_class
+        if comment_id.present?
+          Source::Extractor::RedditComment
+        else
+          Source::Extractor::Reddit
+        end
+      end
+
       def image_url?
-        domain == "redditmedia.com" || (domain == "redd.it" && subdomain.in?(%w[i preview external-preview])) || file.present?
+        super || full_image_url.present?
       end
 
       def page_url
@@ -86,10 +127,14 @@ module Source
           "https://www.reddit.com/r/#{subreddit}/comments/#{work_id}/#{title}"
         elsif username.present? && work_id.present? && title.present?
           "https://www.reddit.com/user/#{username}/comments/#{work_id}/#{title}"
+        elsif subreddit.present? && work_id.present? && comment_id.present?
+          "https://www.reddit.com/r/#{subreddit}/comments/#{work_id}/comment/#{comment_id}"
         elsif subreddit.present? && work_id.present?
           "https://www.reddit.com/r/#{subreddit}/comments/#{work_id}"
         elsif subreddit.present? && share_id.present?
           "https://www.reddit.com/r/#{subreddit}/s/#{share_id}"
+        elsif work_id.present? && comment_id.present?
+          "https://www.reddit.com/comments/#{work_id}/comment/#{comment_id}"
         elsif work_id.present?
           "https://www.reddit.com/comments/#{work_id}"
         end
@@ -97,12 +142,6 @@ module Source
 
       def profile_url
         "https://www.reddit.com/user/#{username}" if username.present?
-      end
-
-      def full_image_url
-        return unless image_url?
-        return "https://i.redd.it/#{file}" if file.present?
-        original_url
       end
     end
   end

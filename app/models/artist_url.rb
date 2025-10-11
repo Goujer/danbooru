@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class ArtistURL < ApplicationRecord
-  normalize :url, :normalize_url
+  normalizes :url, with: ->(url) { ArtistURL.normalize_url(url) }
 
   validates :url, presence: true, length: { maximum: 300, message: "'%{value}' is too long (maximum is 300 characters)" }, uniqueness: { scope: :artist_id }
   validate :validate_url_format
@@ -61,6 +61,11 @@ class ArtistURL < ApplicationRecord
     where_like("regexp_replace(lower(artist_urls.url), '^https?://|/$', '', 'g') || '/'", url) # this is indexed
   end
 
+  def self.normalized_url_equals_any(urls)
+    urls = urls.map { |url| url.to_s.downcase.gsub(%r{\Ahttps?://|/\z}i, "") + "/" } # "https://example.com/A/B/C" => "example.com/a/b/c/"
+    where(["regexp_replace(lower(artist_urls.url), '^https?://|/$', '', 'g') || '/' IN (:urls)", { urls: }]) # this is indexed
+  end
+
   def domain
     parsed_url&.domain.to_s
   end
@@ -89,6 +94,10 @@ class ArtistURL < ApplicationRecord
       true
     when %r{bsky\.app/profile/did:}i
       true
+    when %r{lofter\.com/mentionredirect.do}i
+      true
+    when %r{mihuashi\.com/users/}i
+      true
     else
       false
     end
@@ -98,7 +107,7 @@ class ArtistURL < ApplicationRecord
   def priority
     sites = %w[
       Pixiv Twitter
-      Anifty ArtStation Baraag Bilibili BCY Booth Deviant\ Art Fantia Foundation Furaffinity Hentai\ Foundry Lofter Newgrounds Nico\ Seiga Nijie Pawoo Fanbox Pixiv\ Sketch Plurk Reddit Arca.live DC\ Inside Skeb Tinami Tumblr Weibo Misskey.io Misskey.art Misskey.design Xfolio
+      Anifty ArtStation Baraag Bilibili BCY Booth Deviant\ Art Fantia Foundation Furaffinity Hentai\ Foundry Huashijie Lofter Newgrounds Nico\ Seiga Nijie Pawoo Fanbox Pixiv\ Sketch Plurk Reddit Arca.live DC\ Inside Skeb Tinami Tumblr Weibo Misskey.io Misskey.art Misskey.design Xfolio
       Ask.fm Facebook FC2 Gumroad Instagram Ko-fi Livedoor Mihuashi Mixi.jp Patreon Piapro.jp Picarto Privatter Sakura.ne.jp Stickam Twitch Youtube
       Amazon Circle.ms DLSite Doujinshi.org Erogamescape Mangaupdates Melonbooks Toranoana Wikipedia
     ]
@@ -132,20 +141,15 @@ class ArtistURL < ApplicationRecord
     ArtistFinder.find_artists(url).without(artist)
   end
 
-  def validate_scheme(uri)
-    errors.add(:url, "'#{uri}' must begin with http:// or https:// ") unless uri.scheme.in?(%w[http https])
-  end
-
-  def validate_hostname(uri)
-    errors.add(:url, "'#{uri}' has a hostname '#{uri.host}' that does not contain a dot") unless uri.host&.include?(".")
-  end
-
   def validate_url_format
     uri = Addressable::URI.parse(url)
-    validate_scheme(uri)
-    validate_hostname(uri)
-  rescue Addressable::URI::InvalidURIError => e
-    errors.add(:url, "'#{uri}' is malformed: #{e}")
+    Source::URL.parse!(url)
+
+    if !uri.host&.include?(".")
+      errors.add(:url, "'#{url}' is not a valid URL")
+    end
+  rescue StandardError
+    errors.add(:url, "'#{url}' is not a valid URL")
   end
 
   def self.available_includes

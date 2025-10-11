@@ -16,7 +16,7 @@ class UploadMediaAsset < ApplicationRecord
   validates :source_url, format: { with: %r{\A(https?|file)://}i, message: "is not a valid URL" }
   validates :page_url, format: { with: %r{\A(https?)://}i, message: "is not a valid URL" }, allow_nil: true
 
-  enum status: {
+  enum :status, {
     pending: 0,
     processing: 100,
     active: 200,
@@ -92,6 +92,10 @@ class UploadMediaAsset < ApplicationRecord
     parsed_canonical_url&.bad_link?
   end
 
+  def image_sample?
+    parsed_source_url&.image_sample?
+  end
+
   # The source of the post after upload. This is either the image URL, if the image URL is convertible to a page URL
   # (e.g. Pixiv), or the page URL if it's not (e.g. Twitter).
   memoize def canonical_url
@@ -114,6 +118,10 @@ class UploadMediaAsset < ApplicationRecord
     else
       source_url
     end
+  end
+
+  memoize def parsed_source_url
+    Source::URL.parse(source_url) unless file_upload?
   end
 
   memoize def parsed_canonical_url

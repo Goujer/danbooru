@@ -32,6 +32,8 @@ begin
 rescue LoadError
 end
 
+require_relative "../app/logical/danbooru/url"
+
 module Danbooru
   mattr_accessor :config
 
@@ -47,7 +49,7 @@ module Danbooru
     config.app_generators.scaffold_controller :responders_controller
 
     # Initialize configuration defaults for originally generated Rails version.
-    config.load_defaults 7.1
+    config.load_defaults 7.2
     config.active_record.schema_format = :sql
 
     # https://guides.rubyonrails.org/configuring.html#config-active-support-cache-format-version
@@ -56,7 +58,7 @@ module Danbooru
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
-    config.autoload_lib(ignore: %w(assets tasks))
+    config.autoload_lib(ignore: %w(assets tasks dtext_rb))
 
     # Configuration for the application, engines, and railties goes here.
     #
@@ -75,18 +77,10 @@ module Danbooru
     # request param containing the word 'password' etc.
     #
     # https://guides.rubyonrails.org/configuring.html#config-filter-parameters
-    config.filter_parameters += [:password, :api_key, :secret, :ip_addr, :address, :email_verification_key, :signed_id] if Rails.env.production?
+    config.filter_parameters += [:password, :api_key, :secret, :ip_addr, :address, :email_verification_key, :signed_id] if !Rails.env.local?
 
     raise "Danbooru.config.secret_key_base not configured" if Danbooru.config.secret_key_base.blank?
     config.secret_key_base = Danbooru.config.secret_key_base
-
-    if Danbooru.config.mail_delivery_method.to_sym == :smtp
-      config.action_mailer.delivery_method = :smtp
-      config.action_mailer.smtp_settings = Danbooru.config.mail_settings
-    elsif Danbooru.config.mail_delivery_method.to_sym == :sendmail
-      config.action_mailer.delivery_method = :sendmail
-      config.action_mailer.sendmail_settings = Danbooru.config.mail_settings
-    end
 
     # https://guides.rubyonrails.org/action_mailer_basics.html#intercepting-and-observing-emails
     # app/logical/email_delivery_logger.rb
@@ -116,7 +110,7 @@ module Danbooru
     end
 
     # In development mode, allow the site to be embedded in an <iframe> so that it can be viewed inside things like VS Code or Github Codespaces.
-    config.action_dispatch.default_headers.delete("X-Frame-Options") if Rails.env.development?
+    config.action_dispatch.default_headers.delete("X-Frame-Options") if Rails.env.local?
 
     # Disable the origin check to fix `HTTP Origin header didn't match request.base_url` errors when running behind a reverse
     # proxy. This is necessary because some reverse proxies (such as Github Codespaces) set the Origin header incorrectly.
@@ -124,11 +118,13 @@ module Danbooru
       config.action_controller.forgery_protection_origin_check = false
     end
 
-    config.after_initialize do
-      Rails.application.routes.default_url_options = {
-        host: Danbooru.config.hostname
-      }
-    end
+    canonical_url = Danbooru::URL.parse!(Danbooru.config.canonical_url)
+    config.relative_url_root = canonical_url.path.presence
+
+    Rails.application.routes.default_url_options = {
+      host: canonical_url.host,
+      port: canonical_url.port,
+    }
   end
 
   I18n.enforce_available_locales = false

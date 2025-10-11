@@ -24,7 +24,7 @@
 
 #edit-dialog {
   /* Hide everything but the rating and tags fields. */
-  .post_has_embedded_notes_fieldset, .post_lock_fieldset, .post_parent_id, .post_source, .dropzone-container, #upload-guide-notice {
+  .post_parent_id, .post_source, .post_has_embedded_notes {
     display: none;
   }
 
@@ -62,14 +62,6 @@ div.post_rating > label {
 }
 
 div#c-posts {
-  .fav-buttons {
-    font-size: var(--text-lg);
-
-    button.ui-button {
-      padding: 0.25em 0.75em;
-    }
-  }
-
   form#remove-fav-button button:not([disabled]) .icon {
     color: var(--remove-favorite-button);
   }

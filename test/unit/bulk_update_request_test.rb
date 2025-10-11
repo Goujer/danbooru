@@ -196,6 +196,81 @@ class BulkUpdateRequestTest < ActiveSupport::TestCase
           assert_equal(true, @alias.present?)
           assert_equal(true, @alias.is_active?)
         end
+
+        context "when rewriting wiki pages" do
+          should "rewrite wiki pages to use the new tag" do
+            @wiki = create(:wiki_page, body: "[[aaa]] bar")
+
+            create_bur!("alias aaa -> bbb", @admin)
+
+            assert_equal("[[bbb]] bar", @wiki.reload.body)
+          end
+
+          should "not fail to rewrite wiki pages if the body is too long" do
+            @wiki = build(:wiki_page, title: "foo", body: "[[aaa]] bar #{"x" * WikiPage::MAX_WIKI_LENGTH}")
+            @wiki.save!(validate: false)
+
+            create_bur!("alias aaa -> bbb", @admin)
+
+            assert_equal("[[bbb]] bar #{"x" * WikiPage::MAX_WIKI_LENGTH}", @wiki.reload.body)
+          end
+        end
+
+        context "when rewriting pool descriptions" do
+          should "rewrite pool descriptions to use the new tag" do
+            @pool = create(:pool, description: "foo [[aaa]] bar")
+
+            create_bur!("alias aaa -> bbb", @admin)
+
+            assert_equal("foo [[bbb]] bar", @pool.reload.description)
+          end
+
+          should "not fail to rewrite pool descriptions if the pool description is too long" do
+            @pool = build(:pool, description: "foo [[aaa]] bar #{"x" * Pool::MAX_DESCRIPTION_LENGTH}")
+            @pool.save!(validate: false)
+
+            create_bur!("alias aaa -> bbb", @admin)
+
+            assert_equal("foo [[bbb]] bar #{"x" * Pool::MAX_DESCRIPTION_LENGTH}", @pool.reload.description)
+          end
+        end
+
+        context "when moving blacklisted tags" do
+          should "move blacklisted tags" do
+            user = create(:user, blacklisted_tags: "old_tag")
+            create_bur!("alias old_tag -> new_tag", @admin)
+
+            assert_equal(true, user.reload.blacklisted_tags.split.include?("new_tag"))
+          end
+
+          should "not fail if the user has too many blacklisted tags" do
+            user = build(:user, blacklisted_tags: User::MAX_BLACKLIST_TAGS.succ.times.map { |n| "tag#{n}" }.join("\n"))
+            user.save!(validate: false)
+
+            create_bur!("alias tag0 -> new_tag", @admin)
+
+            assert_equal(true, user.reload.blacklisted_tags.split.include?("new_tag"))
+          end
+        end
+
+        context "when moving saved searches" do
+          should "move saved searches" do
+            create(:tag, name: "old_tag")
+            ss = create(:saved_search, query: "old_tag")
+            create_bur!("alias old_tag -> new_tag", @admin)
+
+            assert_equal(true, ss.reload.query.split.include?("new_tag"))
+          end
+
+          should "not fail if the saved search has too many tags" do
+            ss = build(:saved_search, query: SavedSearch::MAX_TAGS.succ.times.map { |n| create(:tag, name: "tag#{n}").name }.join(" "))
+            ss.save!(validate: false)
+
+            create_bur!("alias tag0 -> new_tag", @admin)
+
+            assert_equal(true, ss.reload.query.split.include?("new_tag"))
+          end
+        end
       end
 
       context "the create implication command" do
@@ -520,6 +595,86 @@ class BulkUpdateRequestTest < ActiveSupport::TestCase
             assert_equal("tony_taka_(style)", @wiki.reload.title)
           end
         end
+
+        context "when rewriting wiki pages" do
+          should "rewrite wiki pages to use the new tag" do
+            create(:tag, name: "aaa")
+            @wiki = create(:wiki_page, body: "[[aaa]] bar")
+
+            create_bur!("rename aaa -> bbb", @admin)
+
+            assert_equal("[[bbb]] bar", @wiki.reload.body)
+          end
+
+          should "not fail to rewrite wiki pages if the body is too long" do
+            create(:tag, name: "aaa")
+            @wiki = build(:wiki_page, title: "foo", body: "[[aaa]] bar #{"x" * WikiPage::MAX_WIKI_LENGTH}")
+            @wiki.save!(validate: false)
+
+            create_bur!("rename aaa -> bbb", @admin)
+
+            assert_equal("[[bbb]] bar #{"x" * WikiPage::MAX_WIKI_LENGTH}", @wiki.reload.body)
+          end
+        end
+
+        context "when rewriting pool descriptions" do
+          should "rewrite pool descriptions to use the new tag" do
+            create(:tag, name: "aaa")
+            @pool = create(:pool, description: "foo [[aaa]] bar")
+
+            create_bur!("rename aaa -> bbb", @admin)
+
+            assert_equal("foo [[bbb]] bar", @pool.reload.description)
+          end
+
+          should "not fail to rewrite pool descriptions if the pool description is too long" do
+            create(:tag, name: "aaa")
+            @pool = build(:pool, description: "foo [[aaa]] bar #{"x" * Pool::MAX_DESCRIPTION_LENGTH}")
+            @pool.save!(validate: false)
+
+            create_bur!("rename aaa -> bbb", @admin)
+
+            assert_equal("foo [[bbb]] bar #{"x" * Pool::MAX_DESCRIPTION_LENGTH}", @pool.reload.description)
+          end
+        end
+
+        context "when moving blacklisted tags" do
+          should "move blacklisted tags" do
+            create(:tag, name: "old_tag")
+            user = create(:user, blacklisted_tags: "old_tag")
+            create_bur!("rename old_tag -> new_tag", @admin)
+
+            assert_equal(true, user.reload.blacklisted_tags.split.include?("new_tag"))
+          end
+
+          should "not fail if the user has too many blacklisted tags" do
+            user = build(:user, blacklisted_tags: User::MAX_BLACKLIST_TAGS.succ.times.map { |n| create(:tag, name: "tag#{n}").name }.join("\n"))
+            user.save!(validate: false)
+
+            create_bur!("rename tag0 -> new_tag", @admin)
+
+            assert_equal(true, user.reload.blacklisted_tags.split.include?("new_tag"))
+          end
+        end
+
+        context "when moving saved searches" do
+          should "move saved searches" do
+            create(:tag, name: "old_tag")
+            ss = create(:saved_search, query: "old_tag")
+            create_bur!("rename old_tag -> new_tag", @admin)
+
+            assert_equal(true, ss.reload.query.split.include?("new_tag"))
+          end
+
+          should "not fail if the saved search has too many tags" do
+            ss = build(:saved_search, query: SavedSearch::MAX_TAGS.succ.times.map { |n| create(:tag, name: "tag#{n}").name }.join(" "))
+            ss.save!(validate: false)
+
+            create_bur!("rename tag0 -> new_tag", @admin)
+
+            assert_equal(true, ss.reload.query.split.include?("new_tag"))
+          end
+        end
       end
 
       context "the nuke command" do
@@ -822,18 +977,23 @@ class BulkUpdateRequestTest < ActiveSupport::TestCase
     end
 
     should "create a forum topic" do
-      bur = create(:bulk_update_request, reason: "zzz", script: "create alias aaa -> bbb")
+      user = create(:user)
+      bur = create(:bulk_update_request, user: user, reason: "zzz", script: "create alias aaa -> bbb")
 
       assert_equal(true, bur.forum_post.present?)
       assert_match(/\[bur:#{bur.id}\]/, bur.forum_post.body)
       assert_match(/zzz/, bur.forum_post.body)
+      assert_equal(user, bur.forum_topic.creator)
+      assert_equal(user, bur.forum_topic.updater)
+      assert_equal(user, bur.forum_post.creator)
+      assert_equal(user, bur.forum_post.updater)
     end
 
     context "with an associated forum topic" do
       setup do
         @topic = create(:forum_topic, title: "[bulk] hoge", creator: @admin)
         @post = create(:forum_post, topic: @topic, creator: @admin)
-        @req = FactoryBot.create(:bulk_update_request, :script => "create alias AAA -> BBB", :forum_topic_id => @topic.id, :forum_post_id => @post.id, :title => "[bulk] hoge")
+        @req = create(:bulk_update_request, script: "create alias AAA -> BBB", forum_topic: @topic, forum_post: @post)
       end
 
       should "leave the BUR pending if there is a validation error during approval" do
@@ -853,11 +1013,65 @@ class BulkUpdateRequestTest < ActiveSupport::TestCase
         assert_equal("pending", @req.status)
       end
 
+      should "create a forum post on approval" do
+        @req.approve!(@admin)
+
+        assert_equal("processing", @req.status)
+        assert_equal(%{The "bulk update request ##{@req.id}":/bulk_update_requests?search%5Bid%5D=#{@req.id} (forum ##{@post.id}) has been approved by @#{@admin.name}.}, @topic.forum_posts.last.body)
+        assert_equal(User.system, @topic.forum_posts.last.creator)
+        assert_equal(User.system, @topic.forum_posts.last.updater)
+      end
+
       should "not send @mention dmails to the approver" do
         assert_no_difference("Dmail.count") do
           @req.approve!(@admin)
         end
       end
+    end
+
+    context "that doesn't belong to a forum post" do
+      should "not fail to be rejected" do
+        bur = create(:bulk_update_request)
+        bur.update!(forum_post: nil)
+
+        assert_nil(bur.forum_post)
+        bur.reject!
+
+        assert_equal("rejected", bur.status)
+      end
+
+      should "not fail to be approved" do
+        bur = create(:bulk_update_request)
+        bur.update!(forum_post: nil)
+
+        assert_nil(bur.forum_post)
+        bur.approve!(create(:admin_user))
+
+        assert_equal("processing", bur.status)
+      end
+    end
+
+    context "when validating a new bulk update request" do
+      subject { build(:bulk_update_request) }
+
+      should allow_value("test").for(:title)
+      should_not allow_value("").for(:title)
+      should_not allow_value(" ").for(:title)
+      should_not allow_value("x" * 201).for(:title)
+
+      should allow_value("test").for(:reason)
+      should allow_value((["!post #1"] * 5).join("\n")).for(:reason)
+      should_not allow_value("").for(:reason)
+      should_not allow_value(" ").for(:reason)
+      should_not allow_value("x" * 20_001).for(:reason)
+      should_not allow_value((["!post #1"] * 10).join("\n")).for(:reason)
+
+      should_not allow_value(0).for(:status)
+      should_not allow_value("unknown").for(:status)
+
+      should allow_value("nuke fumimi").for(:reason)
+      should_not allow_value("").for(:script)
+      should_not allow_value("x" * 20_001).for(:script)
     end
 
     context "when searching" do

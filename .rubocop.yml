@@ -42,6 +42,9 @@ Layout/SpaceInsideBlockBraces:
 Layout/SpaceInsideHashLiteralBraces:
   Enabled: false
 
+Lint/DuplicateBranch:
+  Enabled: false
+
 Metrics/AbcSize:
   Enabled: false
 
@@ -110,6 +113,9 @@ Style/Alias:
 Style/AsciiComments:
   Enabled: false
 
+Style/ClassAndModuleChildren:
+  Enabled: false
+
 Style/CommentAnnotation:
   Enabled: false
 
@@ -125,6 +131,9 @@ Style/EmptyElse:
 
 Style/EmptyMethod:
   EnforcedStyle: expanded
+
+Style/FormatString:
+  Enabled: false
 
 Style/FormatStringToken:
   Enabled: false
@@ -190,6 +199,9 @@ Style/SymbolProc:
 
 Style/TernaryParentheses:
   EnforcedStyle: require_parentheses_when_complex
+
+Style/TrailingCommaInArguments:
+  EnforcedStyleForMultiline: consistent_comma
 
 Style/TrailingCommaInArrayLiteral:
   EnforcedStyleForMultiline: consistent_comma

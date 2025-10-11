@@ -2,10 +2,6 @@
 
 # @see Source::URL::Bluesky
 class Source::Extractor::Bluesky < Source::Extractor
-  def match?
-    Source::URL::Bluesky === parsed_url
-  end
-
   def image_urls
     if parsed_url.image_url?
       [parsed_url.full_image_url]
@@ -15,25 +11,29 @@ class Source::Extractor::Bluesky < Source::Extractor
   end
 
   def image_urls_from_api
+    case embed["$type"]
+    when "app.bsky.embed.images"
+      blobs = embed["images"].pluck("image")
+    when "app.bsky.embed.video"
+      blobs = [embed["video"]]
+    else
+      blobs = []
+    end
+
+    blobs.map do |blob|
+      blob_cid = blob.dig("ref", "$link") || blob["cid"]
+      "https://bsky.social/xrpc/com.atproto.sync.getBlob?did=#{user_did}&cid=#{blob_cid}"
+    end
+  end
+
+  def embed
     embed = api_response&.dig("thread", "post", "record", "embed").to_h
 
     if embed["$type"] == "app.bsky.embed.recordWithMedia"
       embed = embed["media"].to_h
     end
 
-    blobs = case embed["$type"]
-    when "app.bsky.embed.images"
-      embed["images"].pluck("image")
-    when "app.bsky.embed.video"
-      [embed["video"]]
-    else
-      []
-    end
-
-    blobs.map do |blob|
-      blob_cid = blob.dig("ref", "$link") || blob.dig("cid")
-      "https://bsky.social/xrpc/com.atproto.sync.getBlob?did=#{user_did}&cid=#{blob_cid}"
-    end
+    embed
   end
 
   def page_url
@@ -52,12 +52,12 @@ class Source::Extractor::Bluesky < Source::Extractor
     [profile_url, account_url].compact
   end
 
-  def tag_name
+  def username
     # ixy.bsky.social -> ixy
     user_handle.to_s.split(".").first
   end
 
-  def artist_name
+  def display_name
     api_response&.dig("thread", "post", "author", "displayName")
   end
 
@@ -86,8 +86,8 @@ class Source::Extractor::Bluesky < Source::Extractor
     return unless user_handle_from_url.present?
 
     response = http.cache(1.minute).parsed_get(
-      "https://bsky.social/xrpc/com.atproto.identity.resolveHandle",
-      params: { handle: user_handle_from_url }
+      "https://api.bsky.app/xrpc/com.atproto.identity.resolveHandle",
+      params: { handle: user_handle_from_url },
     ) || {}
     response["did"]
   end
@@ -108,20 +108,37 @@ class Source::Extractor::Bluesky < Source::Extractor
     text = artist_commentary_desc.dup.force_encoding("ASCII-8BIT")
 
     api_response&.dig("thread", "post", "record", "facets").to_a.reverse.each do |facet|
-      tag = facet["features"].to_a.find {|f| f["$type"] == "app.bsky.richtext.facet#tag"}
-      next if tag.nil?
-
-      tag_name = tag["tag"]
-      byte_start = facet.dig("index", "byteStart")
-      byte_end = facet.dig("index", "byteEnd")
-      text[byte_start...byte_end] = %{<a href="https://bsky.app/hashtag/#{CGI.escapeHTML(Danbooru::URL.escape(tag_name))}">##{CGI.escapeHTML(tag_name)}</a>}.force_encoding("ASCII-8BIT")
+      if (tag = facet["features"].to_a.find {|f| f["$type"] == "app.bsky.richtext.facet#tag"}).present?
+        tag_name = tag["tag"]
+        byte_start = facet.dig("index", "byteStart")
+        byte_end = facet.dig("index", "byteEnd")
+        text[byte_start...byte_end] = %{<a href="https://bsky.app/hashtag/#{CGI.escapeHTML(Danbooru::URL.escape(tag_name))}">##{CGI.escapeHTML(tag_name)}</a>}.force_encoding("ASCII-8BIT")
+      elsif (mention = facet["features"].to_a.find {|f| f["$type"] == "app.bsky.richtext.facet#mention"}).present?
+        did = mention["did"]
+        byte_start = facet.dig("index", "byteStart")
+        byte_end = facet.dig("index", "byteEnd")
+        username = text[byte_start...byte_end]
+        text[byte_start...byte_end] = %{<a href="https://bsky.app/profile/#{CGI.escapeHTML(Danbooru::URL.escape(did))}">#{CGI.escapeHTML(username)}</a>}.force_encoding("ASCII-8BIT")
+      end
     end
 
-    text.force_encoding("UTF-8").gsub("\n", "<br>")
+    text = text.force_encoding("UTF-8")
+
+    alt_tags = embed&.dig("images").to_a.pluck(:alt).presence || [embed&.dig("alt")]
+    alt_tags.compact_blank.each do |alt_text|
+      text << <<~EOS.chomp
+        <blockquote>
+        <h6>#{(embed["$type"] == "app.bsky.embed.video") ? "Video" : "Image"} Description</h6>
+        <p>#{CGI.escapeHTML(alt_text).gsub("\n", "<br>")}</p>
+        </blockquote>
+      EOS
+    end
+
+    text.gsub("\n", "<br>")
   end
 
   def tags
-    api_response&.dig("thread", "post", "record", "facets").to_a.pluck("features").flatten.select do |f| 
+    api_response&.dig("thread", "post", "record", "facets").to_a.pluck("features").flatten.select do |f|
       f["$type"] == "app.bsky.richtext.facet#tag"
     end.pluck("tag").map do |tag|
       [tag, "https://bsky.app/hashtag/#{Danbooru::URL.escape(tag)}"]
@@ -132,51 +149,12 @@ class Source::Extractor::Bluesky < Source::Extractor
   memoize def api_response
     return {} unless post_id.present?
 
-    request(
-      "https://bsky.social/xrpc/app.bsky.feed.getPostThread",
+    params = {
       uri: "at://#{user_did}/app.bsky.feed.post/#{post_id}",
       depth: 0,
       parentHeight: 0,
-    )
-  end
+    }
 
-  # https://www.docs.bsky.app/docs/api/com-atproto-server-create-session
-  memoize def access_token
-    return nil if Danbooru.config.bluesky_identifier.blank? || Danbooru.config.bluesky_password.blank?
-
-    response = http.parsed_post(
-      "https://bsky.social/xrpc/com.atproto.server.createSession",
-      json: { identifier: Danbooru.config.bluesky_identifier, password: Danbooru.config.bluesky_password }
-    ).to_h
-
-    if response["error"].present?
-      DanbooruLogger.info("Bluesky login failed (#{response["message"]} #{response["message"]})")
-      nil
-    else
-      response["accessJwt"]
-    end
-  end
-
-  memoize def cached_access_token
-    Cache.get("bluesky-access-token", 1.hours, skip_nil: true) do
-      access_token
-    end
-  end
-
-  def clear_cached_access_token!
-    flush_cache # clear memoized access token
-    Cache.delete("bluesky-access-token")
-  end
-
-  def request(url, **params)
-    response = http.cache(1.minute).headers(Authorization: "Bearer #{cached_access_token}").get(url, params: params).parse
-
-    if response["error"].in?(%w[InvalidToken ExpiredToken])
-      DanbooruLogger.info("Bluesky access token stale; logging in again")
-      clear_cached_access_token!
-      response = http.cache(1.minute).headers(Authorization: "Bearer #{cached_access_token}").get(url, params: params).parse
-    end
-
-    response
+    http.cache(1.minute).parsed_get("https://api.bsky.app/xrpc/app.bsky.feed.getPostThread", params: params)
   end
 end

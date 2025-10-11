@@ -4,11 +4,7 @@
 # @see https://wiki.inkbunny.net/wiki/API
 class Source::Extractor::Inkbunny < Source::Extractor
   def self.enabled?
-    Danbooru.config.inkbunny_session.present?
-  end
-
-  def match?
-    Source::URL::Inkbunny === parsed_url
+    SiteCredential.for_site("Inkbunny").present?
   end
 
   def image_urls
@@ -19,16 +15,12 @@ class Source::Extractor::Inkbunny < Source::Extractor
     end
   end
 
-  def page_url
-    parsed_url.page_url || parsed_referer&.page_url
-  end
-
-  def artist_name
-    submission[:username]
+  def username
+    submission[:username] || parsed_url.username || parsed_referer&.username
   end
 
   def profile_url
-    "https://inkbunny.net/#{submission[:username]}" if submission.present?
+    "https://inkbunny.net/#{username}" if username.present?
   end
 
   def user_url
@@ -48,7 +40,7 @@ class Source::Extractor::Inkbunny < Source::Extractor
   end
 
   def dtext_artist_commentary_desc
-    DText.from_html(artist_commentary_desc) do |element|
+    DText.from_html(artist_commentary_desc, base_url: "https://inkbunny.net") do |element|
       if element.name == "table"
         mention = element.at ".widget_userNameSmall"
         if mention.present?
@@ -83,14 +75,16 @@ class Source::Extractor::Inkbunny < Source::Extractor
   # https://wiki.inkbunny.net/wiki/API#Quick_Start_Guide
   # https://wiki.inkbunny.net/wiki/API#Login
   memoize def session_id
-    return nil if Danbooru.config.inkbunny_username.blank? || Danbooru.config.inkbunny_password.blank?
+    return nil if credentials[:username].blank? || credentials[:password].blank?
 
-    response = http.parsed_get("https://inkbunny.net/api_login.php", params: { username: Danbooru.config.inkbunny_username, password: Danbooru.config.inkbunny_password })
+    response = http.parsed_get("https://inkbunny.net/api_login.php", params: { username: credentials[:username], password: credentials[:password] })
 
     if response[:error_code].present?
       DanbooruLogger.info("Inkbunny login failed (#{response[:error_code]} #{response[:error_message]})")
+      site_credential.error!(:invalid)
       nil
     else
+      site_credential.success!
       response[:sid]
     end
   end

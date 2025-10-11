@@ -5,6 +5,9 @@ class User < ApplicationRecord
 
   class PrivilegeError < StandardError; end
 
+  MAX_BLACKLIST_TAGS = 5_000
+  MAX_BLACKLIST_RULES = 5_000
+
   module Levels
     ANONYMOUS = 0
     RESTRICTED = 10
@@ -75,6 +78,12 @@ class User < ApplicationRecord
   # The number of digits in each backup code.
   BACKUP_CODE_LENGTH = 8
 
+  # The number of backup codes to generate for a user.
+  MAX_BACKUP_CODES = 3
+
+  # The number of digits in each backup code.
+  BACKUP_CODE_LENGTH = 8
+
   attribute :id
   attribute :created_at
   attribute :updated_at
@@ -103,24 +112,40 @@ class User < ApplicationRecord
   attribute :is_deleted, default: false
 
   has_bit_flags BOOLEAN_ATTRIBUTES, :field => "bit_prefs"
-  enum theme: { auto: 0, light: 50, dark: 100 }, _suffix: true
+  enum :theme, { auto: 0, light: 50, dark: 100 }, suffix: true
 
   attr_reader :password
+  attr_accessor :request # The HTTP request, used during signup.
+
+  normalizes :blacklisted_tags, with: ->(string) { string.to_s.lines.map(&:strip).join("\n").strip }
+  normalizes :favorite_tags, with: ->(string) { string.normalize_whitespace.strip }
+  normalizes :custom_style, with: ->(string) { string.normalize_whitespace.strip }
 
   after_initialize :initialize_attributes, if: :new_record?
+  validates :blacklisted_tags, visible_string: { allow_empty: true }, length: { maximum: 100_000 }, if: :blacklisted_tags_changed?
+  validates :favorite_tags, visible_string: { allow_empty: true }, length: { maximum: 10_000 }, if: :favorite_tags_changed?
+  validates :custom_style, visible_string: { allow_empty: true }, length: { maximum: 40_000 }, if: :custom_style_changed?
   validates :name, user_name: true, on: :create
   validates :password, length: { minimum: 5 }, if: ->(rec) { rec.new_record? || rec.password.present? }
   validates :default_image_size, inclusion: { in: %w[large original] }
   validates :per_page, inclusion: { in: (1..PostSets::Post::MAX_PER_PAGE) }
   validates :password, confirmation: { message: "Passwords don't match" }
   validates :comment_threshold, inclusion: { in: (-100..5) }
-  validate  :validate_enable_private_favorites, on: :update
-  validate  :validate_custom_css, if: :custom_style_changed?
-  before_validation :normalize_blacklisted_tags
+  validates :level, inclusion: { in: User::Levels.constants.map { |c| User::Levels.const_get(c) } }, if: :level_changed?
+  validates :level, exclusion: { in: [User::Levels::ANONYMOUS] }, if: :level_changed?
+  validate :validate_enable_private_favorites, on: :update
+  validate :validate_blacklisted_tags, if: :blacklisted_tags_changed?
+  validate :validate_favorite_tags, if: :favorite_tags_changed?
+  validate :validate_custom_css, if: :custom_style_changed?
+
+  before_save :recalculate_upload_points, if: :level_changed?
   before_create :promote_to_owner_if_first_user
+  after_create :send_welcome_email
+  after_create_commit :login_new_user
 
   has_many :artist_versions, foreign_key: :updater_id
   has_many :artist_commentary_versions, foreign_key: :updater_id
+  has_many :bulk_update_requests
   has_many :comments, foreign_key: :creator_id
   has_many :comment_votes, dependent: :destroy
   has_many :wiki_page_versions, foreign_key: :updater_id
@@ -129,6 +154,7 @@ class User < ApplicationRecord
   has_many :forum_topic_visits, dependent: :destroy
   has_many :visited_forum_topics, through: :forum_topic_visits, source: :forum_topic
   has_many :moderation_reports, as: :model
+  has_many :pool_versions, foreign_key: :updater_id
   has_many :posts, :foreign_key => "uploader_id"
   has_many :post_appeals, foreign_key: :creator_id
   has_many :post_approvals, :dependent => :destroy
@@ -160,6 +186,8 @@ class User < ApplicationRecord
   has_many :upload_media_assets, through: :uploads, dependent: :destroy
   has_many :mod_actions, as: :subject, dependent: :destroy
   has_many :reactions, as: :model, dependent: :destroy
+  has_many :site_credentials, foreign_key: :creator_id, dependent: :destroy
+  has_many :login_sessions, dependent: :destroy
   belongs_to :inviter, class_name: "User", optional: true
 
   accepts_nested_attributes_for :email_address, reject_if: :all_blank, allow_destroy: true
@@ -237,6 +265,22 @@ class User < ApplicationRecord
     def validate_enable_private_favorites
       if enable_private_favorites_was == false && enable_private_favorites == true && !Pundit.policy!(self, self).can_enable_private_favorites?
         errors.add(:base, "Can't enable privacy mode without a Gold account")
+      end
+    end
+
+    def validate_blacklisted_tags
+      if blacklisted_tags.to_s.lines.size > MAX_BLACKLIST_RULES
+        errors.add(:blacklisted_tags, "can't have more than #{MAX_BLACKLIST_RULES} blacklist rules")
+      end
+
+      if blacklisted_tags.to_s.split.size > MAX_BLACKLIST_TAGS
+        errors.add(:blacklisted_tags, "can't have more than #{MAX_BLACKLIST_TAGS} blacklisted tags")
+      end
+    end
+
+    def validate_favorite_tags
+      if favorite_tags.to_s.split.size > 1000
+        errors.add(:favorite_tags, "can't have more than 1000 favorite tags")
       end
     end
 
@@ -324,16 +368,6 @@ class User < ApplicationRecord
   concerning :LoginVerificationMethods do
     extend Memoist
 
-    # @return [Array<Danbooru::IpAddress>] The list of IP addresses that have been used by this account before.
-    def authorized_ip_addresses
-      user_events.authorized.distinct.pluck(:ip_addr)
-    end
-
-    # @return [Array<Danbooru::IpAddress>] The list of /24 or /64 subnets that have been used by this account before.
-    def authorized_subnets
-      user_events.authorized.distinct.pluck(Arel.sql("network(set_masklen(ip_addr, CASE WHEN family(ip_addr) = 4 THEN 24 ELSE 64 END)) AS ip_addr"))
-    end
-
     # @param ip_addr [Danbooru::IpAddress] The IP address or subnet to check.
     # @return [Boolean] True if this IP address or subnet has been used by this account before.
     def authorized_ip?(ip_addr)
@@ -348,6 +382,31 @@ class User < ApplicationRecord
       if can_receive_email?(require_verified_email: false)
         UserMailer.with_request(request).login_verification(user_event).deliver_later
       end
+    end
+  end
+
+  concerning :SockpuppetMethods do
+    # @return [Hash<Symbol, Hash>] A hash of users that share session IDs or IP addresses with this user.
+    def sockpuppet_accounts(limit: 100)
+      shared_session_ids = UserEvent.shared_session_ids_for(self).includes(:user)
+      shared_ip_addresses = UserEvent.shared_ip_addresses_for(self).includes(:user, :ip_geolocation)
+      events = (shared_session_ids + shared_ip_addresses).take(limit)
+      accounts = { session_ids: {}, ip_addresses: {}, ip_geolocations: {} }
+
+      events.each do |event|
+        next if event.user.in?(accounts[:session_ids].values.flatten) || event.user.in?(accounts[:ip_addresses].values.flatten)
+
+        if event.try(:session_id).present?
+          accounts[:session_ids][event.session_id] ||= []
+          accounts[:session_ids][event.session_id] << event.user
+        elsif event.try(:ip_addr).present?
+          accounts[:ip_addresses][event.ip_addr.subnet] ||= []
+          accounts[:ip_addresses][event.ip_addr.subnet] << event.user
+          accounts[:ip_geolocations][event.ip_addr.subnet] = event.ip_geolocation
+        end
+      end
+
+      accounts
     end
   end
 
@@ -420,15 +479,28 @@ class User < ApplicationRecord
     # @param request [ActionDispatch::Request] The HTTP request.
     # @param max_codes [Integer] The number of backup codes to generate.
     # @param length [Integer] The number of digits in each backup code.
-    def generate_backup_codes!(request, max_codes: MAX_BACKUP_CODES, length: BACKUP_CODE_LENGTH)
+    def generate_backup_codes!(request = nil, max_codes: MAX_BACKUP_CODES, length: BACKUP_CODE_LENGTH)
       with_lock do
         update!(backup_codes: max_codes.times.map { generate_backup_code(length) })
-        UserEvent.create_from_request!(self, :backup_code_generate, request)
+        UserEvent.create_from_request!(self, :backup_code_generate, request) if request.present?
       end
     end
 
     def generate_backup_code(length = BACKUP_CODE_LENGTH)
       SecureRandom.rand(10**length)
+    end
+
+    def send_backup_code!(current_user)
+      with_lock do
+        if backup_codes.blank?
+          errors.add(:base, "doesn't have backup codes")
+        elsif email_address.blank?
+          errors.add(:base, "doesn't have an email address")
+        else
+          UserMailer.send_backup_code(self).deliver_later
+          ModAction.log("sent backup code to user ##{id}", :backup_code_send, subject: self, user: current_user)
+        end
+      end
     end
   end
 
@@ -535,6 +607,20 @@ class User < ApplicationRecord
     end
   end
 
+  concerning :UploadMethods do
+    def recalculate_upload_points
+      if new_record? && level >= Levels::CONTRIBUTOR
+        self.upload_points = Danbooru.config.maximum_upload_points.to_i
+      elsif new_record? && level < Levels::CONTRIBUTOR
+        self.upload_points = Danbooru.config.initial_upload_points.to_i
+      elsif level >= Levels::CONTRIBUTOR && level_was < Levels::CONTRIBUTOR
+        self.upload_points = upload_limit.recalculated_upload_points
+      elsif level < Levels::CONTRIBUTOR && level_was >= Levels::CONTRIBUTOR
+        self.upload_points = upload_limit.recalculated_upload_points
+      end
+    end
+  end
+
   concerning :EmailMethods do
     class_methods do
       # @param email_address [String] The user's email address.
@@ -547,17 +633,6 @@ class User < ApplicationRecord
     def can_receive_email?(require_verified_email: true)
       email_address.present? && email_address.is_deliverable? && (email_address.is_verified? || !require_verified_email)
     end
-
-    def change_email(new_email, request)
-      transaction do
-        update(email_address_attributes: { address: new_email })
-
-        if errors.none?
-          UserEvent.create_from_request!(self, :email_change, request)
-          UserMailer.with_request(request).email_change_confirmation(self).deliver_later
-        end
-      end
-    end
   end
 
   concerning :BlacklistMethods do
@@ -566,7 +641,7 @@ class User < ApplicationRecord
         has_blacklisted_tag(old_name).find_each do |user|
           user.with_lock do
             user.rewrite_blacklist(old_name, new_name)
-            user.save!
+            user.save!(validate: false)
           end
         end
       end
@@ -576,9 +651,9 @@ class User < ApplicationRecord
       blacklisted_tags.gsub!(/(?:^| )([-~])?#{Regexp.escape(old_name)}(?: |$)/i) { " #{$1}#{new_name} " }
     end
 
-    def normalize_blacklisted_tags
-      return unless blacklisted_tags.present?
-      self.blacklisted_tags = blacklisted_tags.lines.map(&:strip).join("\n")
+    # @return [Array<String>] The list of blacklist rules. Each line in the blacklist is a rule.
+    def blacklist_rules
+      blacklisted_tags.to_s.downcase.gsub(/(rating:\w)\w+/, '\1').lines.map(&:strip).compact_blank
     end
   end
 
@@ -595,7 +670,7 @@ class User < ApplicationRecord
   concerning :LimitMethods do
     class_methods do
       def statement_timeout(level)
-        if Rails.env.development?
+        if Rails.env.local?
           60_000
         else
           9_000
@@ -632,19 +707,16 @@ class User < ApplicationRecord
       User.max_saved_searches(level)
     end
 
-    def is_appeal_limited?
-      return false if is_contributor?
-      upload_limit.free_upload_slots < UploadLimit::APPEAL_COST
-    end
-
     def is_flag_limited?
-      return false if has_unlimited_flags?
-      post_flags.active.count >= 5
+      post_flags.active.count >= flag_limit
     end
 
-    # Flags are unlimited if you're an approver.
-    def has_unlimited_flags?
-      return true if is_approver?
+    def flag_limit
+      if is_approver?
+        Float::INFINITY
+      else
+        5
+      end
     end
 
     def upload_limit
@@ -753,7 +825,21 @@ class User < ApplicationRecord
 
     def validate_custom_css
       if !custom_css.valid?
-        errors.add(:base, "Custom CSS contains a syntax error. Validate it with https://codebeautify.org/cssvalidate")
+        errors.add(:custom_style, "contains a syntax error. Validate it with https://codebeautify.org/cssvalidate")
+      end
+    end
+  end
+
+  concerning :SignupMethods do
+    def send_welcome_email
+      if request.present? && can_receive_email?(require_verified_email: false)
+        UserMailer.with_request(request).welcome_user(self).deliver_later
+      end
+    end
+
+    def login_new_user
+      if request.present?
+        SessionLoader.new(request).login_user(self, :user_creation)
       end
     end
   end
@@ -829,10 +915,6 @@ class User < ApplicationRecord
 
   def initialize_attributes
     self.new_post_navigation_layout = true
-  end
-
-  def presenter
-    @presenter ||= UserPresenter.new(self)
   end
 
   def dtext_shortlink(**options)

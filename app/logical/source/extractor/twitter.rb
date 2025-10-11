@@ -16,12 +16,8 @@ class Source::Extractor
       /(?<!\A)深夜の真剣お絵描き60分一本勝負(?:_\d+)?\z/,
       /(?<!\A)版深夜のお絵描き60分一本勝負(?:_\d+)?\z/,
       /(?<!\A)版真剣お絵描き60分一本勝(?:_\d+)?\z/,
-      /(?<!\A)版お絵描き60分一本勝負(?:_\d+)?\z/
+      /(?<!\A)版お絵描き60分一本勝負(?:_\d+)?\z/,
     ]
-
-    def match?
-      Source::URL::Twitter === parsed_url
-    end
 
     def image_urls
       # https://pbs.twimg.com/media/EBGbJe_U8AA4Ekb.jpg:orig
@@ -44,13 +40,11 @@ class Source::Extractor
     end
 
     def page_url
-      return nil if status_id.blank? || tag_name.blank?
-      "https://twitter.com/#{tag_name}/status/#{status_id}"
+      "https://twitter.com/#{username}/status/#{status_id}" if status_id.present? && username.present?
     end
 
     def profile_url
-      return nil if tag_name.blank?
-      "https://twitter.com/#{tag_name}"
+      "https://twitter.com/#{username}" if username.present?
     end
 
     def intent_url
@@ -66,12 +60,12 @@ class Source::Extractor
       parsed_url.user_id || parsed_referer&.user_id || graphql_tweet.dig(:legacy, :user_id_str)
     end
 
-    def tag_name
-      tag_name_from_url || graphql_tweet.dig(:core, :user_results, :result, :legacy, :screen_name)
+    def username
+      parsed_url.username || parsed_referer&.username || graphql_tweet.dig(:core, :user_results, :result, :legacy, :screen_name)
     end
 
-    def artist_name
-      graphql_tweet.dig(:core, :user_results, :result, :legacy, :name) || tag_name
+    def display_name
+      graphql_tweet.dig(:core, :user_results, :result, :legacy, :name)
     end
 
     def artist_commentary_desc
@@ -95,45 +89,59 @@ class Source::Extractor
     end
 
     def dtext_artist_commentary_desc
+      DText.from_html(html_artist_commentary_desc, base_url: "https://twitter.com")
+    end
+
+    def html_artist_commentary_desc
       return nil if artist_commentary_desc.blank?
 
-      dtext = "".dup
+      html = "".dup
       desc = artist_commentary_desc
       entities = []
       api_entities = graphql_tweet.dig(:note_tweet, :note_tweet_results, :result, :entity_set) || graphql_tweet.dig(:legacy, :entities)
 
       entities += api_entities[:hashtags].to_a.pluck(:indices, :text).map do |e|
-        { first: e[0][0], last: e[0][1], text: e[1], dtext: %Q("##{e[1]}":[https://twitter.com/hashtag/#{Danbooru::URL.escape(e[1])}]) }
+        { first: e[0][0], last: e[0][1], text: e[1], html: %{<a href="https://twitter.com/hashtag/#{CGI.escapeHTML(Danbooru::URL.escape(e[1]))}">##{CGI.escapeHTML(e[1])}</a>} }
       end
 
       entities += api_entities[:urls].to_a.pluck(:indices, :expanded_url).map do |e|
-        { first: e[0][0], last: e[0][1], text: e[1], dtext: "<#{e[1]}>" }
+        { first: e[0][0], last: e[0][1], text: e[1], html: %{<a href="#{CGI.escapeHTML(e[1])}">#{CGI.escapeHTML(e[1])}</a>} }
       end
 
       entities += api_entities[:user_mentions].to_a.pluck(:indices, :screen_name).map do |e|
-        { first: e[0][0], last: e[0][1], text: e[1], dtext: %Q("@#{e[1]}":[https://twitter.com/#{CGI.escape(e[1])}]) }
+        { first: e[0][0], last: e[0][1], text: e[1], html: %{<a href="https://twitter.com/#{CGI.escapeHTML(Danbooru::URL.escape(e[1]))}">@#{CGI.escapeHTML(e[1])}</a>} }
       end
 
       entities += api_entities[:symbols].to_a.pluck(:indices, :text).map do |e|
-        { first: e[0][0], last: e[0][1], text: e[1], dtext: %Q("$#{e[1]}":[https://twitter.com/search?q=$#{CGI.escape(e[1])}]) }
+        { first: e[0][0], last: e[0][1], text: e[1], html: %{<a href="https://twitter.com/search?q=$#{CGI.escapeHTML(Danbooru::URL.escape(e[1]))}">$#{CGI.escapeHTML(e[1])}</a>} }
       end
 
       entities += api_entities[:media].to_a.pluck(:indices, :expanded_url).map do |e|
-        { first: e[0][0], last: e[0][1], text: e[1], dtext: "" }
+        { first: e[0][0], last: e[0][1], text: e[1], html: "" }
       end
 
       entities.sort_by! { _1[:first] }
 
       i = 0
       entities.each do |entity|
-        dtext << desc[i..entity[:first]-1] if i < entity[:first]
-        dtext << entity[:dtext]
+        # HTML characters in `desc` are already escaped by Twitter, so we don't have to escape them ourselves.
+        html << desc[i..entity[:first] - 1].gsub("\n", "<br>") if i < entity[:first]
+        html << entity[:html]
         i = entity[:last]
       end
 
-      dtext << desc[i..desc.size]
-      dtext = CGI.unescapeHTML(dtext).strip
-      dtext
+      html << desc[i..desc.size].gsub("\n", "<br>")
+
+      graphql_tweet.dig(:legacy, :entities, :media).to_a.pluck(:ext_alt_text).compact_blank.each do |alt_text|
+        html << <<~EOS.chomp
+          <blockquote>
+          <h6>Image Description</h6>
+          <p>#{CGI.escapeHTML(alt_text).gsub("\n", "<br>")}</p>
+          </blockquote>
+        EOS
+      end
+
+      html
     end
 
     memoize def syndication_api_response
@@ -203,25 +211,58 @@ class Source::Extractor
       entries = instructions.find { |instruction| instruction["type"] == "TimelineAddEntries" }&.dig("entries")
       entry = entries&.find { |entry| entry["entryId"] == "tweet-#{status_id}" }
       result = entry&.dig("content", "itemContent", "tweet_results", "result") || {}
-      tweet = result["tweet"] || result
-      tweet
+      result["tweet"] || result
     end
 
     def http
       super.headers(
-        "authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA", # non-secret; used by the official client
-        "x-csrf-token": Danbooru.config.twitter_csrf_token,
+        authorization: "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA", # non-secret; used by the official client
+        "x-csrf-token": credentials[:csrf_token]
       ).cookies(
-        "auth_token": Danbooru.config.twitter_auth_token,
-        "ct0": Danbooru.config.twitter_csrf_token,
+        auth_token: credentials[:auth_token],
+        ct0: credentials[:csrf_token]
       )
     end
 
-    def parsed_get(path, **params)
+    def parsed_get(path, cache: 1.minute, **params)
       headers = { "x-client-transaction-id": tid_generator.transaction_id(path) }
-      response = http.cache(1.minute).headers(headers).get("https://x.com#{path}", params: params)
+      cache_key = "x.com#{path}?#{params.to_query}"
+      response = http.cache(cache, key: cache_key, if: ->(response) { response.status != 429 }).headers(headers).get("https://x.com#{path}", params: params)
+
       # puts ({ status: response.status, **headers, time: tid_generator.time, xor_key: tid_generator.xor_key, key: tid_generator.twitter_site_verification_key, rate_limit: response.headers["x-rate-limit-remaining"] }).to_json
+      update_credentials!(response)
       response.parse if response.status.success?
+    end
+
+    def update_credentials!(response)
+      return if site_credential.blank?
+
+      endpoint = response.uri.path.split("/").last # /i/api/graphql/_8aYOgEDz35BrBcBal1-_w/TweetDetail -> TweetDetail
+      metadata = {
+        rate_limit: {
+          endpoint => {
+            remaining: response.headers["x-rate-limit-remaining"].to_i,
+            limit: response.headers["x-rate-limit-limit"].to_i,
+            reset: response.headers["x-rate-limit-reset"].to_i,
+          },
+        },
+      }
+
+      # XXX Cached responses still increment the credential usage count, even though it didn't really get used.
+      if response.status == 429
+        site_credential.error!(:rate_limited, **metadata)
+      else
+        site_credential.success!(**metadata)
+      end
+    end
+
+    def site_credentials
+      super.reject do |credential|
+        # Filter out credentials that are rate limited. XXX Assumes we're using the TweetDetail endpoint.
+        remaining_requests = credential.metadata.dig("rate_limit", "TweetDetail", "remaining")&.to_i || 150
+        reset_time = credential.metadata.dig("rate_limit", "TweetDetail", "reset").to_i
+        remaining_requests < 3 && Time.zone.now.to_i < reset_time
+      end
     end
 
     memoize def tid_generator
@@ -230,10 +271,6 @@ class Source::Extractor
 
     def status_id
       parsed_url.status_id || parsed_referer&.status_id
-    end
-
-    def tag_name_from_url
-      parsed_url.username || parsed_referer&.username
     end
   end
 end

@@ -87,7 +87,6 @@ class ArtistTest < ActiveSupport::TestCase
         assert_equal(true, @artist.reload.is_banned?)
         assert_equal(true, @post.reload.is_banned?)
         assert_equal(true, @artist.versions.last.is_banned?)
-        assert_equal(true, TagImplication.active.exists?(antecedent_name: @artist.name, consequent_name: "banned_artist"))
 
         @artist.unban!(@admin)
 
@@ -95,8 +94,6 @@ class ArtistTest < ActiveSupport::TestCase
         assert_equal(false, @post.reload.is_banned?)
         assert_equal(false, @artist.versions.last.is_banned?)
         assert_equal("aaa", @post.tag_string)
-        assert_equal(false, TagImplication.active.exists?(antecedent_name: @artist.name, consequent_name: "banned_artist"))
-        assert_equal(true, TagImplication.deleted.exists?(antecedent_name: @artist.name, consequent_name: "banned_artist"))
         assert_equal(true, ModAction.artist_unban.exists?(subject: @artist))
       end
 
@@ -108,20 +105,6 @@ class ArtistTest < ActiveSupport::TestCase
         refute(@post.is_deleted?)
       end
 
-      should "create a new tag implication" do
-        assert_equal(1, TagImplication.where(:antecedent_name => "aaa", :consequent_name => "banned_artist").count)
-        assert_equal("aaa banned_artist", @post.reload.tag_string)
-      end
-
-      should "create the banned_artist tag if it doesn't already exist" do
-        assert_equal(true, Tag.exists?(name: "banned_artist", category: Tag.categories.artist))
-      end
-
-      should "set the approver of the banned_artist implication" do
-        ta = TagImplication.where(:antecedent_name => "aaa", :consequent_name => "banned_artist").first
-        assert_equal(@admin.id, ta.approver.id)
-      end
-
       should "update the artist history" do
         assert_equal(true, @artist.reload.is_banned?)
         assert_equal(true, @artist.versions.last.is_banned?)
@@ -129,17 +112,11 @@ class ArtistTest < ActiveSupport::TestCase
 
       should "tag the posts" do
         assert_equal(true, @post.reload.is_banned?)
-        assert_equal(true, @post.has_tag?("banned_artist"))
       end
 
       should "create a mod action" do
         assert_equal(true, ModAction.artist_ban.exists?(subject: @artist))
       end
-    end
-
-    should "normalize its name" do
-      artist = FactoryBot.create(:artist, :name => "  AAA BBB  ")
-      assert_equal("aaa_bbb", artist.name)
     end
 
     should "resolve ambiguous urls" do
@@ -157,8 +134,7 @@ class ArtistTest < ActiveSupport::TestCase
     should "not allow invalid urls" do
       artist = FactoryBot.build(:artist, :url_string => "blah")
       assert_equal(false, artist.valid?)
-      assert_includes(artist.errors["urls.url"], "'blah' must begin with http:// or https:// ")
-      assert_includes(artist.errors["urls.url"], "'blah' has a hostname '' that does not contain a dot")
+      assert_includes(artist.errors["urls.url"], "'blah' is not a valid URL")
     end
 
     should "allow fixing invalid urls" do
@@ -246,7 +222,7 @@ class ArtistTest < ActiveSupport::TestCase
 
     context "when finding deviantart artists" do
       setup do
-        skip "DeviantArt API keys not set" unless Danbooru.config.deviantart_client_id.present?
+        skip "DeviantArt API keys not set" unless Source::Extractor::DeviantArt.enabled?
         FactoryBot.create(:artist, :name => "artgerm", :url_string => "http://artgerm.deviantart.com/")
         FactoryBot.create(:artist, :name => "trixia",  :url_string => "http://trixdraws.deviantart.com/")
       end
@@ -360,7 +336,7 @@ class ArtistTest < ActiveSupport::TestCase
 
     context "when finding pawoo artists" do
       setup do
-        skip "Pawoo keys not set" unless Danbooru.config.pawoo_access_token
+        skip "Pawoo keys not set" unless SiteCredential.for_site("Pawoo").present?
         FactoryBot.create(:artist, :name => "evazion", :url_string => "https://pawoo.net/@evazion")
         FactoryBot.create(:artist, :name => "yasumo01", :url_string => "https://pawoo.net/web/accounts/28816")
       end
@@ -558,6 +534,7 @@ class ArtistTest < ActiveSupport::TestCase
       assert_search_equals(bkub, url_matches: "*bkub*")
       assert_search_equals(bkub, url_matches: "/rifyu|bkub/")
       assert_search_equals(bkub, url_matches: "http://bkub.com/test.jpg")
+      assert_search_equals(bkub, url_matches: "http://bkub.com/test.jpg https://www.pixiv.net/users/9948")
     end
 
     should "search on has_tag and return matches" do

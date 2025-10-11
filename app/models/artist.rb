@@ -8,10 +8,10 @@ class Artist < ApplicationRecord
 
   deletable
 
-  normalize :name, :normalize_name
-  normalize :group_name, :normalize_other_name
-  normalize :other_names, :normalize_other_names
-  array_attribute :other_names # XXX must come after `normalize :other_names`
+  normalizes :name, with: ->(name) { Artist.normalize_name(name) }
+  normalizes :group_name, with: ->(name) { Artist.normalize_other_name(name) }
+  normalizes :other_names, with: ->(names) { Artist.normalize_other_names(names) }
+  array_attribute :other_names # XXX must come after `normalizes :other_names`
 
   validate :validate_artist_name
   validate :validate_other_names, if: :other_names_changed?
@@ -216,10 +216,7 @@ class Artist < ApplicationRecord
   module BanMethods
     def unban!(current_user)
       with_lock do
-        ti = TagImplication.active.find_by(antecedent_name: name, consequent_name: "banned_artist")
-        ti&.update!(status: "deleted")
-
-        BulkUpdateRequestProcessor.mass_update(name, "-status:banned -banned_artist", user: current_user)
+        BulkUpdateRequestProcessor.mass_update(name, "-status:banned", user: current_user)
 
         CurrentUser.scoped(current_user) { update!(is_banned: false) }
         ModAction.log("unbanned artist ##{id}", :artist_unban, subject: self, user: current_user)
@@ -229,11 +226,6 @@ class Artist < ApplicationRecord
     def ban!(banner)
       with_lock do
         BulkUpdateRequestProcessor.mass_update(name, "status:banned", user: banner)
-
-        unless TagImplication.active.exists?(antecedent_name: name, consequent_name: "banned_artist")
-          Tag.find_or_create_by_name("banned_artist", category: "artist", current_user: banner)
-          TagImplication.approve!(antecedent_name: name, consequent_name: "banned_artist", approver: banner)
-        end
 
         CurrentUser.scoped(banner) { update!(is_banned: true) }
         ModAction.log("banned artist ##{id}", :artist_ban, subject: self, user: banner)
@@ -279,11 +271,14 @@ class Artist < ApplicationRecord
       query = query.strip
 
       if query =~ %r{\Ahttps?://}i
-        url = Source::Extractor.find(query).profile_url || query
-        ArtistFinder.find_artists(url)
+        Source::Extractor.find(query).artists
       else
         where(id: ArtistURL.url_matches(query).select(:artist_id))
       end
+    end
+
+    def has_normalized_url(urls)
+      where(id: ArtistURL.normalized_url_equals_any(urls).select(:artist_id))
     end
 
     def any_name_or_url_matches(query)
