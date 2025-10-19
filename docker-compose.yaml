@@ -228,6 +228,8 @@ services:
 
   autotagger:
     image: ghcr.io/danbooru/autotagger:latest
+    ports:
+      - "5000:5000"
 
   sqs:
     image: softwaremill/elasticmq-native
