@@ -110,10 +110,10 @@ x-base-template: &base-template
   environment:
     <<: *sqs-env
     # The public URL of your site. You can set this if you have a domain name for your site.
-    DANBOORU_CANONICAL_URL: ${DANBOORU_CANONICAL_URL:-}
+    DANBOORU_CANONICAL_URL: https://gallery.ostan-collections.net
 
     # Set this to true if you're running behind a reverse proxy, such as Cloudflare.
-    DANBOORU_REVERSE_PROXY: ${DANBOORU_REVERSE_PROXY:-false}
+    DANBOORU_REVERSE_PROXY: true
 
     # You should set DANBOORU_SECRET_KEY_BASE to a random secret string. If you
     # don't set this, you will be logged out every time you restart the instance.
@@ -126,9 +126,10 @@ x-base-template: &base-template
     DATABASE_URL: postgresql://danbooru@postgres/danbooru?pool=100
     DANBOORU_REDIS_URL: redis://redis:6379
     DANBOORU_IQDB_URL: http://iqdb:5588
-    DANBOORU_AUTOTAGGER_URl: http://autotagger:5000
-    DANBOORU_RECOMMENDER_URL: http://recommender:5000
+    DANBOORU_AUTOTAGGER_URL: http://autotagger:5000
     DANBOORU_IMAGE_STORAGE_PATH: /images
+
+    DANBOORU_RECOMMENDER_URL: http://recommender:5000
 
   tmpfs:
     - /tmp
@@ -185,7 +186,7 @@ services:
     image: redis
 
   postgres:
-    image: ghcr.io/danbooru/postgres:16.1
+    image: evazion/postgres
     shm_size: 1gb
     environment:
       POSTGRES_USER: danbooru
@@ -199,7 +200,9 @@ services:
       - "danbooru-data:/var/lib/postgresql/data"
 
   nginx:
-    image: ${DANBOORU_IMAGE:-ghcr.io/danbooru/danbooru:production}
+    build:
+      context: .
+      dockerfile: ./Dockerfile
     command: ["openresty", "-e", "/dev/stderr"]
     environment:
       # The external port to listen on. You can set this to 80 if you have nothing else listening on port 80.
@@ -208,10 +211,10 @@ services:
       # If your instance is running behind a reverse proxy (such as Cloudflare, Ngrok, etc), then set this to true.
       #
       # If you get a `HTTP Origin header didn't match request.base_url` error when creating a new account, then set this to true.
-      DANBOORU_REVERSE_PROXY: ${DANBOORU_REVERSE_PROXY:-false}
+      DANBOORU_REVERSE_PROXY: true
 
       # Used by Nginx to determine the root directory if we're running in a subdirectory (e.g. http://example.com/danbooru).
-      DANBOORU_CANONICAL_URL: ${DANBOORU_CANONICAL_URL:-}
+      DANBOORU_CANONICAL_URL: https://gallery/ostan-collections.net
     ports:
       - "${DANBOORU_PORT:-3000}:3000"
     depends_on:
