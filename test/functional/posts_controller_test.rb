@@ -922,12 +922,6 @@ class PostsControllerTest < ActionDispatch::IntegrationTest
           end
         end
       end
-
-      should "not normalize source URLs to NFC form" do
-        # ブ = U+30D5 U+3099 ('KATAKANA LETTER HU', 'COMBINING KATAKANA-HIRAGANA VOICED SOUND MARK')
-        source = "https://tuyu-official.jp/wp/wp-content/uploads/2022/09/雨模様［サブスクジャケット］.jpeg"
-        assert_post_source_equals(source, source)
-      end
     end
 
     context "update action" do

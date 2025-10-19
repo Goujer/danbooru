@@ -112,46 +112,6 @@ class ApplicationMetrics
     wiki_pages = WikiPage.group(:is_deleted).async_pluck(Arel.sql("is_deleted, COUNT(*)"))
     wiki_page_versions = WikiPageVersion.async_pluck(Arel.sql("COUNT(*)"))
 
-    artists = Artist.group(:is_deleted).async_pluck(Arel.sql("is_deleted, COUNT(*)"))
-    artist_commentaries = ArtistCommentary.async_pluck(Arel.sql("COUNT(*), COUNT(*) FILTER (WHERE translated_title != '' OR translated_description != '')"))
-    artist_commentary_versions = ArtistCommentaryVersion.async_pluck(Arel.sql("COUNT(*)"))
-    artist_urls = ArtistURL.group(:is_active).async_pluck(Arel.sql("is_active, COUNT(*)"))
-    artist_versions = ArtistVersion.async_pluck(Arel.sql("COUNT(*)"))
-    background_job_queued_count = BackgroundJob.queued.async_count
-    background_job_running_count = BackgroundJob.running.async_count
-    background_job_finished_count = BackgroundJob.finished.async_count
-    background_job_discarded_count = BackgroundJob.discarded.async_count
-    bans = Ban.async_pluck(Arel.sql("COUNT(*), COUNT(*) FILTER (WHERE created_at + duration <= now())"))
-    bulk_update_requests = BulkUpdateRequest.group(:status).async_pluck(Arel.sql("status, COUNT(*)"))
-    comments = Comment.group(:is_deleted).async_pluck(Arel.sql("is_deleted, COUNT(*)"))
-    comment_votes = CommentVote.group(:score).active.async_pluck(Arel.sql("score, COUNT(*)"))
-    dtext_links = DtextLink.group(:link_type).async_pluck(Arel.sql("link_type, COUNT(*)"))
-    favorite_groups = FavoriteGroup.group(:is_public).async_pluck(Arel.sql("is_public, COUNT(*)"))
-    forum_posts = ForumPost.group(:is_deleted).async_pluck(Arel.sql("is_deleted, COUNT(*)"))
-    forum_post_votes = ForumPostVote.group(:score).async_pluck(Arel.sql("score, COUNT(*)"))
-    forum_topics = ForumTopic.group(:is_deleted).async_pluck(Arel.sql("is_deleted, COUNT(*)"))
-    media_assets = MediaAsset.active.group(:file_ext).async_pluck(Arel.sql("file_ext, COUNT(*), SUM(file_size), SUM(image_width*image_height), COALESCE(SUM(duration), 0)"))
-    mod_actions = ModAction.visible(User.anonymous).group(:category).async_pluck(Arel.sql("category, COUNT(*)"))
-    posts = Post.async_pluck(Arel.sql("SUM(up_score), ABS(SUM(down_score)), SUM(fav_count), COUNT(*) FILTER (WHERE is_pending), COUNT(*) FILTER (WHERE is_flagged), COUNT(*) FILTER (WHERE is_deleted), COUNT(*)"))
-    post_approvals = PostApproval.async_pluck(Arel.sql("COUNT(*)"))
-    post_appeals = PostAppeal.group(:status).async_pluck(Arel.sql("status, COUNT(*)"))
-    post_flags = PostFlag.group(:status).async_pluck(Arel.sql("status, COUNT(*)"))
-    post_replacements = PostReplacement.async_pluck(Arel.sql("COUNT(*)"))
-    notes = Note.group(:is_active).async_pluck(Arel.sql("is_active, COUNT(*)"))
-    note_versions = NoteVersion.async_pluck(Arel.sql("COUNT(*)"))
-    pools = Pool.group(:is_deleted, :category).async_pluck(Arel.sql("is_deleted, category, COUNT(*), SUM(cardinality(post_ids))"))
-    pool_versions = PoolVersion.async_pluck(Arel.sql("COUNT(*)"))
-    saved_searches = SavedSearch.async_pluck(Arel.sql("COUNT(*)"))
-    tags = Tag.nonempty.group(:category).async_pluck(Arel.sql("category, COUNT(*), SUM(post_count)"))
-    tag_aliases = TagAlias.group(:status).async_pluck(Arel.sql("status, COUNT(*)"))
-    tag_implications = TagImplication.group(:status).async_pluck(Arel.sql("status, COUNT(*)"))
-    tag_versions = TagVersion.async_pluck(Arel.sql("COUNT(*)"))
-    uploads = Upload.group(:status).async_pluck(Arel.sql("status, COUNT(*)"))
-    users = User.async_pluck(Arel.sql("COUNT(*), COUNT(*) FILTER (WHERE last_logged_in_at > now() - interval '1 hour'), COUNT(*) FILTER (WHERE last_logged_in_at > now() - interval '1 day'), COUNT(*) FILTER (WHERE last_logged_in_at > now() - interval '1 week'), COUNT(*) FILTER (WHERE last_logged_in_at > now() - interval '1 month'), COUNT(*) FILTER (WHERE last_logged_in_at > now() - interval '1 year')"))
-    user_feedbacks = UserFeedback.active.group(:category).async_pluck(Arel.sql("category, COUNT(*)"))
-    wiki_pages = WikiPage.group(:is_deleted).async_pluck(Arel.sql("is_deleted, COUNT(*)"))
-    wiki_page_versions = WikiPageVersion.async_pluck(Arel.sql("COUNT(*)"))
-
     status = ServerStatus.new
     versions = {
       danbooru_version: status.danbooru_version,

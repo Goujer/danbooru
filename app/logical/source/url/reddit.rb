@@ -23,11 +23,6 @@ module Source
         in _, "reddit.com", "media" if params[:url].present?
           @full_image_url = Source::URL.parse(params[:url]).try(:full_image_url)
 
-        # https://www.reddit.com/media?url=https%3A%2F%2Fi.redd.it%2Fds05uzmtd6d61.jpg
-        in _, "reddit.com", "media" if params[:url].present?
-          media_url = Source::URL.parse(params[:url])
-          @file = media_url.file if media_url.is_a?(Reddit) && media_url.image_url?
-
         # https://external-preview.redd.it/92G2gkb545UNlA-PywJqM_F-4TT0xngvmf_gb9sFDqk.jpg?auto=webp&s=0f1e3d0603dbaabe1ead7352202d0de1653d76f6
         # https://external-preview.redd.it/VlT1G4JoqAmP_7DG5UKRCJP8eTRef7dCrRvu2ABm_Xg.png?width=1080&crop=smart&auto=webp&s=d074e9cbfcb2780e6ec0d948daff3cadc91c2a50
         # https://g.redditmedia.com/f-OWw5C5aVumPS4HXVFhTspgzgQB4S77mO-6ad0rzpg.gif?fm=mp4&mp4-fragmented=false&s=ed3d767bf3b0360a50ddd7f503d46225

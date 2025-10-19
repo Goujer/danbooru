@@ -20,9 +20,5 @@
     <% if @user_feedback.present? && @user_feedback.persisted? && policy(@user_feedback).update? %>
       <%= subnav_link_to "Edit", edit_user_feedback_path(@user_feedback) %>
     <% end %>
-
-    <% if @user_feedback.present? && @user_feedback.persisted? && policy(@user_feedback).update? %>
-      <%= subnav_link_to "Edit", edit_user_feedback_path(@user_feedback) %>
-    <% end %>
   <% end %>
 <% end %>

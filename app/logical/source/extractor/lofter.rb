@@ -115,10 +115,6 @@ module Source
         super.headers("User-Agent": "Mozilla/5.0 (Android 14; Mobile; rv:115.0) Gecko/115.0 Firefox/115.0")
       end
 
-      def http
-        super.headers("User-Agent": "Mozilla/5.0 (Android 14; Mobile; rv:115.0) Gecko/115.0 Firefox/115.0")
-      end
-
       memoize def page
         http.cache(1.minute).parsed_get(page_url)
       end

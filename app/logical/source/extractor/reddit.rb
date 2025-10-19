@@ -157,10 +157,6 @@ module Source
         post_data["subreddit_name_prefixed"]
       end
 
-      def share_url
-        parsed_urls.find(&:share_id)
-      end
-
       def api_url
         "https://www.reddit.com/comments/#{work_id}.json" if work_id.present?
       end

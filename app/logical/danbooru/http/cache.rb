@@ -16,10 +16,6 @@ module Danbooru
         HTTP::Options.register_feature :cache, self
       end
 
-      def self.register
-        HTTP::Options.register_feature :cache, self
-      end
-
       def perform(request, &block)
         ::Cache.get(cache_key(request), expires_in) do
           response = yield request

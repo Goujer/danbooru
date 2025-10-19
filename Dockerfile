@@ -263,9 +263,6 @@ RUN <<EOS
 EOS
 
 COPY --link Gemfile Gemfile.lock ./
-RUN chown danbooru:danbooru /danbooru
-
-USER danbooru
 RUN <<EOS
   BUNDLE_FROZEN=1 bundle install --no-cache --jobs $(nproc)
 

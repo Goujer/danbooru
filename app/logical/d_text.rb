@@ -682,8 +682,6 @@ class DText
           title
         elsif title == url
           "<#{url}>"
-        elsif url.starts_with?("mailto:") && url.delete_prefix("mailto:") == title
-          "<#{url}>"
         else
           %{"#{title.gsub('"', "&quot;")}":[#{url}]}
         end

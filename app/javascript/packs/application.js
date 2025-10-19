@@ -23,9 +23,6 @@ require("jquery-ui/ui/widgets/dialog");
 import Rails from '@rails/ujs';
 Rails.start();
 
-import Rails from '@rails/ujs';
-Rails.start();
-
 import 'tippy.js/dist/tippy.css';
 
 importAll(require.context('../src/javascripts', true, /\.js(\.erb)?$/));

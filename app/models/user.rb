@@ -64,19 +64,7 @@ class User < ApplicationRecord
   # Personal preferences that are editable by the user, rather than internal flags. These will be cleared when the user deactivates their account.
   USER_PREFERENCE_BOOLEAN_ATTRIBUTES = ACTIVE_BOOLEAN_ATTRIBUTES - %w[is_banned requires_verification is_verified]
 
-  DEFAULT_BLACKLIST = ["gore", "guro", "scat", "shota", "loli", "status:pending"].join("\n")
-
-  # The number of backup codes to generate for a user.
-  MAX_BACKUP_CODES = 3
-
-  # The number of digits in each backup code.
-  BACKUP_CODE_LENGTH = 8
-
-  # The number of backup codes to generate for a user.
-  MAX_BACKUP_CODES = 3
-
-  # The number of digits in each backup code.
-  BACKUP_CODE_LENGTH = 8
+  DEFAULT_BLACKLIST = ["gore", "guro", "scat", "shota", "loli"].join("\n")
 
   # The number of backup codes to generate for a user.
   MAX_BACKUP_CODES = 3

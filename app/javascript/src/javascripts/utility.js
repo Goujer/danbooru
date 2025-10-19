@@ -36,16 +36,6 @@ export function isBeforeInputEventAvailable() {
   );
 }
 
-// The following function returns true if beforeinput, and thus getTargetRanges, is supported.
-//
-// https://developer.mozilla.org/en-US/docs/Web/API/Element/beforeinput_event#feature_detection
-export function isBeforeInputEventAvailable() {
-  return (
-    window.InputEvent &&
-    typeof InputEvent.prototype.getTargetRanges === "function"
-  );
-}
-
 Utility.dialog = function(title, html) {
   const $dialog = $(html).dialog({
     title: title,

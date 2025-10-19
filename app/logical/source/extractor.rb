@@ -86,11 +86,6 @@ module Source
       [parsed_url, parsed_referer].compact
     end
 
-    # The list of input URLs. Includes both the primary URL and the secondary referer URL, if it exists.
-    def parsed_urls
-      [parsed_url, parsed_referer].compact
-    end
-
     # The list of image (or video) URLs extracted from the target URL.
     #
     # If the target URL is a page, this should be every image on the page. If

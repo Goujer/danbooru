@@ -226,51 +226,6 @@ class SessionsControllerTest < ActionDispatch::IntegrationTest
         assert_equal(true, @user.user_events.login.exists?(login_session_id: session[:login_id]))
       end
 
-      should "allow approvers with 2FA enabled to login from a proxy" do
-        user = create(:user_with_2fa, password: "password", level: User::Levels::APPROVER)
-        ActionDispatch::Request.any_instance.stubs(:remote_ip).returns("1.1.1.1")
-
-        post session_path, params: { session: { name: user.name, password: "password" } }
-
-        assert_response :success
-        assert_nil(nil, session[:user_id])
-        assert_equal(true, user.user_events.totp_login_pending_verification.exists?)
-      end
-
-      should "not log the user in yet if they have 2FA enabled" do
-        user = create(:user_with_2fa, password: "password")
-
-        post session_path, params: { session: { name: user.name, password: "password" } }
-
-        assert_response :success
-        assert_nil(nil, session[:user_id])
-        assert_equal(true, user.user_events.totp_login_pending_verification.exists?)
-      end
-
-      should "not log the user in if the captcha is invalid" do
-        # https://developers.cloudflare.com/turnstile/reference/testing/#dummy-sitekeys-and-secret-keys
-        Danbooru.config.stubs(:captcha_site_key).returns("3x00000000000000000000FF") # forces an interactive challenge
-        Danbooru.config.stubs(:captcha_secret_key).returns("2x0000000000000000000000000000000AA") # always fails
-
-        post session_path, params: { session: { name: @user.name, password: "password" }, "cf-turnstile-response": "blah" }
-
-        assert_response 401
-        assert_nil(nil, session[:user_id])
-        assert_equal(false, @user.user_events.failed_login.exists?)
-      end
-
-      should "log the user in user if the captcha is valid" do
-        Danbooru.config.stubs(:captcha_site_key).returns("3x00000000000000000000FF") # forces an interactive challenge
-        Danbooru.config.stubs(:captcha_secret_key).returns("1x0000000000000000000000000000000AA") # always passes
-
-        post session_path, params: { session: { name: @user.name, password: "password", url: users_path }, "cf-turnstile-response": "blah" }
-
-        assert_redirected_to users_path
-        assert_equal(@user.id, session[:user_id])
-        assert_not_nil(@user.reload.last_ip_addr)
-        assert_equal("login", @user.user_events.last.category)
-      end
-
       should "redirect the user when given an url param" do
         post session_path, params: { session: { name: @user.name, password: "password" }, url: tags_path }
         assert_redirected_to tags_path
