@@ -110,10 +110,10 @@ x-base-template: &base-template
   environment:
     <<: *sqs-env
     # The public URL of your site. You can set this if you have a domain name for your site.
-    DANBOORU_CANONICAL_URL: https://gallery.ostan-collections.net
+    DANBOORU_CANONICAL_URL: ${DANBOORU_CANONICAL_URL:-}
 
     # Set this to true if you're running behind a reverse proxy, such as Cloudflare.
-    DANBOORU_REVERSE_PROXY: true
+    DANBOORU_REVERSE_PROXY: ${DANBOORU_REVERSE_PROXY:-false}
 
     # You should set DANBOORU_SECRET_KEY_BASE to a random secret string. If you
     # don't set this, you will be logged out every time you restart the instance.
@@ -133,6 +133,7 @@ x-base-template: &base-template
 
   tmpfs:
     - /tmp
+    - /danbooru/tmp:mode=777
 
   volumes:
     - danbooru-images:/images
@@ -186,7 +187,7 @@ services:
     image: redis
 
   postgres:
-    image: evazion/postgres
+    image: ghcr.io/danbooru/postgres:16.1
     shm_size: 1gb
     environment:
       POSTGRES_USER: danbooru
@@ -211,10 +212,10 @@ services:
       # If your instance is running behind a reverse proxy (such as Cloudflare, Ngrok, etc), then set this to true.
       #
       # If you get a `HTTP Origin header didn't match request.base_url` error when creating a new account, then set this to true.
-      DANBOORU_REVERSE_PROXY: true
+      DANBOORU_REVERSE_PROXY: ${DANBOORU_REVERSE_PROXY:-false}
 
       # Used by Nginx to determine the root directory if we're running in a subdirectory (e.g. http://example.com/danbooru).
-      DANBOORU_CANONICAL_URL: https://gallery/ostan-collections.net
+      DANBOORU_CANONICAL_URL: ${DANBOORU_CANONICAL_URL:-}
     ports:
       - "${DANBOORU_PORT:-3000}:3000"
     depends_on:
